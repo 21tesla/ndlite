@@ -1,0 +1,13 @@
+# macOS
+.DS_Store
+
+# Python
+__pycache__/
+*.pyc
+
+# PyInstaller artifacts
+build/
+dist/
+*.spec
+*.app
+*.zip
