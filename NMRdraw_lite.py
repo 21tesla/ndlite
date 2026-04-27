@@ -3,7 +3,7 @@ import os
 import numpy as np
 import nmrglue as ng
 from scipy.signal import hilbert
-from PyQt6.QtGui import QTransform, QColor, QFont
+from PyQt6.QtGui import QTransform, QColor, QFont, QMouseEvent
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QHBoxLayout, QGridLayout, QPushButton, QFileDialog,
                              QLabel, QSlider, QGroupBox, QDoubleSpinBox, QSpinBox,
@@ -17,7 +17,38 @@ os.environ["LANG"] = "en_US.UTF-8"
 pg.setConfigOption('background', 'w')
 pg.setConfigOption('foreground', 'k')
 
+class TrackpadPlotWidget(pg.PlotWidget):
+    def mousePressEvent(self, ev):
+        # Check for Option (Alt) + Left-Click
+        if ev.button() == Qt.MouseButton.LeftButton and ev.modifiers() == Qt.KeyboardModifier.AltModifier:
+            # Construct a fake Middle-Click event
+            new_ev = QMouseEvent(
+                ev.type(),
+                ev.position(),
+                ev.globalPosition(),
+                Qt.MouseButton.MiddleButton,
+                ev.buttons() | Qt.MouseButton.MiddleButton,
+                ev.modifiers()
+            )
+            super().mousePressEvent(new_ev)
+        else:
+            super().mousePressEvent(ev)
 
+    def mouseReleaseEvent(self, ev):
+        # Mirror the release event so pyqtgraph knows the drag ended safely
+        if ev.button() == Qt.MouseButton.LeftButton and ev.modifiers() == Qt.KeyboardModifier.AltModifier:
+            new_ev = QMouseEvent(
+                ev.type(),
+                ev.position(),
+                ev.globalPosition(),
+                Qt.MouseButton.MiddleButton,
+                ev.buttons() & ~Qt.MouseButton.LeftButton,
+                ev.modifiers()
+            )
+            super().mouseReleaseEvent(new_ev)
+        else:
+            super().mouseReleaseEvent(ev)
+            
 class NMRViewerApp(QMainWindow):
     def __init__(self, file_paths=None):
         super().__init__()
@@ -233,7 +264,7 @@ class NMRViewerApp(QMainWindow):
 
         main_layout.addWidget(top_panel, stretch=0)
 
-        self.plot_2d = pg.PlotWidget(title="Please load a file.")
+        self.plot_2d = TrackpadPlotWidget(title="Please load a file.")
         self.plot_2d.setLabel('bottom', "X-Axis", units="ppm")
         self.plot_2d.setLabel('left', "Y-Axis", units="ppm")
         self.plot_2d.getViewBox().invertY(True)
