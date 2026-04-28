@@ -75,9 +75,12 @@ class NMRViewerApp(QMainWindow):
         self.h_pos = 0.0
         self.v_pos = 0.0
 
-        self.contour_items = []
+        # Optimization: Object pooling arrays
+        self.file_groups = []
+        self.file_pools_2d = []
+        self.file_curves_1d = []
+        
         self.current_mode = None
-
         self.active_axis = 'x'
         self.phase_state = {
             'x': {'p0': 0.0, 'p1': 0.0},
@@ -303,9 +306,10 @@ class NMRViewerApp(QMainWindow):
         self.plot_2d.scene().sigMouseMoved.connect(self.on_mouse_moved)
         self.plot_2d.scene().sigMouseClicked.connect(self.on_mouse_clicked)
 
-        self.hline = pg.InfiniteLine(angle=0, movable=False, pen=pg.mkPen('g', width=1.5))
-        self.vline = pg.InfiniteLine(angle=90, movable=False, pen=pg.mkPen('g', width=1.5))
-        self.trace_curve = pg.PlotDataItem(pen=pg.mkPen(color='#DAA520', width=1.5))
+        # Optimization: Width=1 for fast, cosmetic rendering
+        self.hline = pg.InfiniteLine(angle=0, movable=False, pen=pg.mkPen('g', width=1))
+        self.vline = pg.InfiniteLine(angle=90, movable=False, pen=pg.mkPen('g', width=1))
+        self.trace_curve = pg.PlotDataItem(pen=pg.mkPen(color='#DAA520', width=1))
 
         self.plot_2d.addItem(self.hline)
         self.plot_2d.addItem(self.vline)
@@ -446,6 +450,19 @@ class NMRViewerApp(QMainWindow):
     def load_files(self, file_names):
         if not file_names:
             return
+            
+        # Optimization: Clean up memory / object pools from previous loads
+        if hasattr(self, 'file_groups'):
+            for g in self.file_groups:
+                if g is not None: self.plot_2d.removeItem(g)
+        if hasattr(self, 'file_curves_1d'):
+            for c in self.file_curves_1d:
+                if c is not None: self.plot_2d.removeItem(c)
+
+        self.file_groups = []
+        self.file_pools_2d = []
+        self.file_curves_1d = []
+        
         self.dic_list = []
         self.raw_data_list = []
         for i in reversed(range(self.file_layout.count())):
@@ -611,6 +628,22 @@ class NMRViewerApp(QMainWindow):
 
             if ndim > 1:
                 self.slice_x_idx = 1
+                
+            # Initialize appropriate object pools per file
+            for idx in range(len(file_names)):
+                if is_1d:
+                    c_pos, _ = self.spectrum_colors[idx]
+                    curve = pg.PlotDataItem(pen=pg.mkPen(c_pos, width=1))
+                    self.plot_2d.addItem(curve)
+                    self.file_curves_1d.append(curve)
+                    self.file_groups.append(None)
+                    self.file_pools_2d.append(None)
+                else:
+                    group = pg.ItemGroup()
+                    self.plot_2d.addItem(group)
+                    self.file_groups.append(group)
+                    self.file_pools_2d.append([])
+                    self.file_curves_1d.append(None)
 
             if len(file_names) == 1:
                 self.lbl_info.setText(f"Loaded {len(file_names)} spectrum")
@@ -745,11 +778,19 @@ class NMRViewerApp(QMainWindow):
             self.trace_curve.setData(x_coords, y_mid - (trace * scale))
 
     def recompute_contours(self):
-        for item in self.contour_items:
-            self.plot_2d.removeItem(item)
-        self.contour_items.clear()
+        if not self.raw_data_list:
+            return
+
+        # Optimization: Disable bounding box recalculations during heavy loop
+        self.plot_2d.getViewBox().disableAutoRange()
+
         if not self.enabled_indices:
             self.trace_curve.setData([], [])
+            for i in range(len(self.raw_data_list)):
+                if self.raw_data.ndim == 1:
+                    if self.file_curves_1d[i]: self.file_curves_1d[i].setVisible(False)
+                else:
+                    if self.file_groups[i]: self.file_groups[i].setVisible(False)
             return
 
         x_p0, x_p1 = self.get_phase_vals('x')
@@ -759,7 +800,14 @@ class NMRViewerApp(QMainWindow):
         if self.raw_data.ndim == 1:
             offset_val = self.cont_sliders['offset'].value()
             base_max = np.max(np.abs(self.current_slice_list[0])) if self.current_slice_list else 1.0
-            for idx, orig_i in enumerate(self.enabled_indices):
+            
+            for orig_i in range(len(self.raw_data_list)):
+                curve = self.file_curves_1d[orig_i]
+                if orig_i not in self.enabled_indices:
+                    curve.setVisible(False)
+                    continue
+                    
+                idx = self.enabled_indices.index(orig_i)
                 raw_data = self.raw_data_list[orig_i]
                 plot_data = raw_data.copy()
                 is_real = not np.iscomplexobj(raw_data)
@@ -768,18 +816,30 @@ class NMRViewerApp(QMainWindow):
                     plot_data = np.real(ng.process.proc_base.ps(plot_data, p0=x_p0, p1=x_p1))
                 else:
                     if not is_real: plot_data = np.real(plot_data)
+                
                 y_data = plot_data + (idx * offset_val * (base_max * 0.1))
                 c_pos, _ = self.spectrum_colors[orig_i % len(self.spectrum_colors)]
-                curve = pg.PlotDataItem(x=self.ppm_x, y=y_data, pen=pg.mkPen(c_pos, width=1.5))
-                self.plot_2d.addItem(curve)
-                self.contour_items.append(curve)
+                
+                # Update item via pool instead of clearing plot
+                curve.setData(x=self.ppm_x, y=y_data)
+                curve.setPen(pg.mkPen(c_pos, width=1))
+                curve.setVisible(True)
             return
 
         base_mult = self.cont_sliders['base'].value()
         scale_fact = self.cont_sliders['scale'].value()
         count = int(self.cont_sliders['count'].value())
 
-        for idx, orig_i in enumerate(self.enabled_indices):
+        for orig_i in range(len(self.raw_data_list)):
+            group = self.file_groups[orig_i]
+            pool = self.file_pools_2d[orig_i]
+
+            if orig_i not in self.enabled_indices:
+                group.setVisible(False)
+                continue
+
+            group.setVisible(True)
+            idx = self.enabled_indices.index(orig_i)
             c_slice = self.current_slice_list[idx]
             raw_data = self.raw_data_list[orig_i]  
             is_real = not np.iscomplexobj(raw_data)
@@ -810,25 +870,50 @@ class NMRViewerApp(QMainWindow):
 
             vis_data = plot_data.T if self.slice_x_idx == 1 else plot_data
             nx, ny = vis_data.shape
+            
+            # Optimization: Assign Transform exclusively to ItemGroup (Matrix Batching)
             scale_x = (self.lim_x[1] - self.lim_x[0]) / max(1, nx - 1)
             scale_y = (self.lim_y[1] - self.lim_y[0]) / max(1, ny - 1)
             tr = QTransform()
             tr.translate(self.lim_x[0], self.lim_y[0])
             tr.scale(scale_x, scale_y)
+            group.setTransform(tr)
 
             base_level = vis_data.std() * base_mult
             factors = scale_fact ** np.arange(count)
             c_pos, c_neg = self.spectrum_colors[orig_i % len(self.spectrum_colors)]
 
-            for level in (base_level * factors):
-                if level > vis_data.max(): break
-                c = pg.IsocurveItem(data=vis_data, level=level, pen=pg.mkPen(c_pos, width=1.5))
-                c.setTransform(tr); self.plot_2d.addItem(c); self.contour_items.append(c)
+            pos_levels = base_level * factors
+            neg_levels = -base_level * factors
+            
+            v_max = vis_data.max()
+            v_min = vis_data.min()
+            pos_levels = [l for l in pos_levels if l <= v_max]
+            neg_levels = [l for l in neg_levels if l >= v_min]
 
-            for level in (-base_level * factors):
-                if level < vis_data.min(): break
-                c = pg.IsocurveItem(data=vis_data, level=level, pen=pg.mkPen(c_neg, width=1.5))
-                c.setTransform(tr); self.plot_2d.addItem(c); self.contour_items.append(c)
+            all_levels = pos_levels + neg_levels
+            is_pos = [True]*len(pos_levels) + [False]*len(neg_levels)
+
+            # Optimization: Re-using pooled instances to prevent allocation/garbage collection
+            pool_idx = 0
+            for level, pos_flag in zip(all_levels, is_pos):
+                pen_color = c_pos if pos_flag else c_neg
+                pen = pg.mkPen(pen_color, width=1)
+                
+                if pool_idx < len(pool):
+                    item = pool[pool_idx]
+                    item.setData(vis_data, level=level)
+                    item.setPen(pen)
+                    item.setVisible(True)
+                else:
+                    item = pg.IsocurveItem(data=vis_data, level=level, pen=pen)
+                    group.addItem(item)
+                    pool.append(item)
+                pool_idx += 1
+
+            # Hide any trailing, unused items in the active pool
+            for i in range(pool_idx, len(pool)):
+                pool[i].setVisible(False)
 
         self.update_live_trace()
 
