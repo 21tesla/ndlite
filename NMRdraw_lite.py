@@ -1,3 +1,5 @@
+#!/opt/homebrew/Caskroom/miniconda/base/bin/python
+
 import sys
 import os
 import numpy as np
@@ -19,9 +21,7 @@ pg.setConfigOption('foreground', 'k')
 
 class TrackpadPlotWidget(pg.PlotWidget):
     def mousePressEvent(self, ev):
-        # Check for Option (Alt) + Left-Click
         if ev.button() == Qt.MouseButton.LeftButton and ev.modifiers() == Qt.KeyboardModifier.AltModifier:
-            # Construct a fake Middle-Click event
             new_ev = QMouseEvent(
                 ev.type(),
                 ev.position(),
@@ -35,7 +35,6 @@ class TrackpadPlotWidget(pg.PlotWidget):
             super().mousePressEvent(ev)
 
     def mouseReleaseEvent(self, ev):
-        # Mirror the release event so pyqtgraph knows the drag ended safely
         if ev.button() == Qt.MouseButton.LeftButton and ev.modifiers() == Qt.KeyboardModifier.AltModifier:
             new_ev = QMouseEvent(
                 ev.type(),
@@ -121,15 +120,46 @@ class NMRViewerApp(QMainWindow):
         self.file_scroll.setWidget(self.file_container)
         v_file.addWidget(self.file_scroll)
 
-        self.lbl_z = QLabel("Z-Plane: 0")
+        # Z-Plane Controls
+        self.z_container = QWidget()
+        h_z = QHBoxLayout(self.z_container)
+        h_z.setContentsMargins(0, 0, 0, 0)
+        
+        self.lbl_z = QLabel("Z-Plane:")
         self.lbl_z.setMinimumWidth(120)
+        
         self.slider_z = QSlider(Qt.Orientation.Horizontal)
-        self.slider_z.valueChanged.connect(self.on_z_changed)
-        self.slider_z.sliderReleased.connect(self.recompute_contours)
-        self.lbl_z.hide()
-        self.slider_z.hide()
-        v_file.addWidget(self.lbl_z)
-        v_file.addWidget(self.slider_z)
+        self.spinbox_z = QSpinBox()
+        self.spinbox_z.setMinimumWidth(80)
+
+        def z_sl_changed(val):
+            self.spinbox_z.blockSignals(True)
+            self.spinbox_z.setValue(val)
+            self.spinbox_z.blockSignals(False)
+            self._update_z_label()
+
+        def z_sb_changed(val):
+            self.slider_z.blockSignals(True)
+            self.slider_z.setValue(val)
+            self.slider_z.blockSignals(False)
+            self._update_z_label()
+            self._update_enabled_state()
+            self.recompute_contours()
+
+        def z_sl_released():
+            self._update_enabled_state()
+            self.recompute_contours()
+
+        self.slider_z.valueChanged.connect(z_sl_changed)
+        self.spinbox_z.valueChanged.connect(z_sb_changed)
+        self.slider_z.sliderReleased.connect(z_sl_released)
+
+        h_z.addWidget(self.lbl_z)
+        h_z.addWidget(self.slider_z)
+        h_z.addWidget(self.spinbox_z)
+        
+        self.z_container.hide()
+        v_file.addWidget(self.z_container)
 
         grp_file.setLayout(v_file)
         top_layout.addWidget(grp_file)
@@ -187,9 +217,9 @@ class NMRViewerApp(QMainWindow):
         grid_cont = QGridLayout()
 
         cont_params = [
-            ("base", "Baseline Multiplier", 0.5, 20.0, 4.0, False),
-            ("scale", "Contour Multiplier", 1.05, 2.0, 1.3, False),
-            ("count", "Number of Contours", 5, 50, 15, True),
+            ("base", "Baseline Multiplier", 0.05, 50.0, 4.0, False),
+            ("scale", "Contour Multiplier", 1.05, 2.5, 1.3, False),
+            ("count", "Number of Contours", 1, 25, 15, True),
             ("offset", "1D Stack Offset", 0.0, 4.0, 0.0, False)
         ]
         for row, (key, label, vmin, vmax, vdef, is_int) in enumerate(cont_params):
@@ -286,6 +316,13 @@ class NMRViewerApp(QMainWindow):
         self.trace_curve.setVisible(False)
 
         main_layout.addWidget(self.plot_2d, stretch=1)
+
+    def _update_z_label(self):
+        if not self.raw_data_list or self.nz <= 1:
+            return
+        z_idx = self.slider_z.value() - 1
+        z_ppm = self.ppm_z[z_idx] if hasattr(self, 'ppm_z') and self.ppm_z is not None else z_idx
+        self.lbl_z.setText(f"{self.label_z or 'Z-Plane'}: {z_ppm:.2f} ppm")
 
     def set_mode(self, mode):
         if self.raw_data is not None and self.raw_data.ndim == 2 and mode == 'z_phase':
@@ -524,56 +561,43 @@ class NMRViewerApp(QMainWindow):
                 self.plot_2d.getViewBox().invertY(False)
 
             elif ndim == 3:
-                orig_dim_z = int(order[2])
-                orig_dim_y = int(order[1])
-                orig_dim_x = int(order[0])
-
-                label_z = self.dic.get(f'FDF{orig_dim_z}LABEL', 'Z')
-                label_y = self.dic.get(f'FDF{orig_dim_y}LABEL', 'Y')
-                label_x = self.dic.get(f'FDF{orig_dim_x}LABEL', 'X')
-
-                uc_z = ng.pipe.make_uc(self.dic, self.raw_data, dim=0)
-                uc_y = ng.pipe.make_uc(self.dic, self.raw_data, dim=1)
-                uc_x = ng.pipe.make_uc(self.dic, self.raw_data, dim=2)
-
-                if 'H' in label_y.upper() and 'H' not in label_x.upper():
-                    self.x_dim, self.y_dim = 1, 2
-                    self.label_x, self.label_y = label_y, label_x
-                    uc_plot_x, uc_plot_y = uc_y, uc_x
-                else:
-                    self.x_dim, self.y_dim = 2, 1
-                    self.label_x, self.label_y = label_x, label_y
-                    uc_plot_x, uc_plot_y = uc_x, uc_y
-
                 self.z_dim = 0
-                self.label_z = label_z
+                self.y_dim = 1
+                self.x_dim = 2
+
+                orig_dim_x = int(order[0]) if len(order) > 0 else 2
+                orig_dim_y = int(order[1]) if len(order) > 1 else 3
+                orig_dim_z = int(order[2]) if len(order) > 2 else 1
+
+                self.label_x = self.dic.get(f'FDF{orig_dim_x}LABEL', 'X')
+                self.label_y = self.dic.get(f'FDF{orig_dim_y}LABEL', 'Y')
+                self.label_z = self.dic.get(f'FDF{orig_dim_z}LABEL', 'Z')
+
+                uc_z = ng.pipe.make_uc(self.dic, self.raw_data, dim=self.z_dim)
+                uc_y = ng.pipe.make_uc(self.dic, self.raw_data, dim=self.y_dim)
+                uc_x = ng.pipe.make_uc(self.dic, self.raw_data, dim=self.x_dim)
+
                 self.ppm_z, self.lim_z = uc_z.ppm_scale(), uc_z.ppm_limits()
-                self.nz = self.raw_data.shape[0]
-                self.ppm_x, self.lim_x = uc_plot_x.ppm_scale(), uc_plot_x.ppm_limits()
-                self.ppm_y, self.lim_y = uc_plot_y.ppm_scale(), uc_plot_y.ppm_limits()
+                self.ppm_y, self.lim_y = uc_y.ppm_scale(), uc_y.ppm_limits()
+                self.ppm_x, self.lim_x = uc_x.ppm_scale(), uc_x.ppm_limits()
+                self.nz = self.raw_data.shape[self.z_dim]
 
                 self.plot_2d.setLabel('bottom', self.label_x, units="ppm")
                 self.plot_2d.setLabel('left', self.label_y, units="ppm")
                 self.plot_2d.getViewBox().invertY(True)
 
             else:
-                orig_dim_y = int(order[1])
-                orig_dim_x = int(order[0])
+                self.y_dim = 0
+                self.x_dim = 1
 
-                label_y = self.dic.get(f'FDF{orig_dim_y}LABEL', 'Y')
-                label_x = self.dic.get(f'FDF{orig_dim_x}LABEL', 'X')
+                orig_dim_x = int(order[0]) if len(order) > 0 else 2
+                orig_dim_y = int(order[1]) if len(order) > 1 else 1
 
-                uc_y = ng.pipe.make_uc(self.dic, self.raw_data, dim=0)
-                uc_x = ng.pipe.make_uc(self.dic, self.raw_data, dim=1)
+                self.label_x = self.dic.get(f'FDF{orig_dim_x}LABEL', 'X')
+                self.label_y = self.dic.get(f'FDF{orig_dim_y}LABEL', 'Y')
 
-                if 'H' in label_y.upper() and 'H' not in label_x.upper():
-                    self.x_dim, self.y_dim = 0, 1
-                    self.label_x, self.label_y = label_y, label_x
-                    uc_plot_x, uc_plot_y = uc_y, uc_x
-                else:
-                    self.x_dim, self.y_dim = 1, 0
-                    self.label_x, self.label_y = label_x, label_y
-                    uc_plot_x, uc_plot_y = uc_x, uc_y
+                uc_plot_y = ng.pipe.make_uc(self.dic, self.raw_data, dim=self.y_dim)
+                uc_plot_x = ng.pipe.make_uc(self.dic, self.raw_data, dim=self.x_dim)
 
                 self.z_dim = None
                 self.label_z = None
@@ -586,14 +610,9 @@ class NMRViewerApp(QMainWindow):
                 self.plot_2d.getViewBox().invertY(True)
 
             if ndim > 1:
-                if self.nz == 1:
-                    self.slice_x_idx = self.x_dim
-                else:
-                    rem_dims = [d for d in [0, 1, 2] if d != self.z_dim]
-                    self.slice_x_idx = rem_dims.index(self.x_dim)
+                self.slice_x_idx = 1
 
             if len(file_names) == 1:
-                shape_str = " x ".join(map(str, self.raw_data.shape))
                 self.lbl_info.setText(f"Loaded {len(file_names)} spectrum")
             else:
                 self.lbl_info.setText(f"Loaded {len(file_names)} spectra")
@@ -606,18 +625,27 @@ class NMRViewerApp(QMainWindow):
 
             if self.nz > 1:
                 self.slider_z.blockSignals(True)
-                self.slider_z.setMaximum(self.nz - 1)
-                self.slider_z.setValue(self.nz // 2)
+                self.spinbox_z.blockSignals(True)
+                
+                self.slider_z.setMinimum(1)
+                self.slider_z.setMaximum(self.nz)
+                self.spinbox_z.setRange(1, self.nz)
+                self.spinbox_z.setSingleStep(1)
+                
+                init_val = (self.nz // 2) + 1
+                self.slider_z.setValue(init_val)
+                self.spinbox_z.setValue(init_val)
+                
                 self.slider_z.blockSignals(False)
-                self.lbl_z.show()
-                self.slider_z.show()
+                self.spinbox_z.blockSignals(False)
+                
+                self.z_container.show()
+                self._update_z_label()
             else:
-                self.lbl_z.hide()
-                self.slider_z.hide()
+                self.z_container.hide()
 
             self._update_enabled_state()
             self.recompute_contours()
-
             self.set_mode(None)
 
             if ndim == 1:
@@ -633,23 +661,19 @@ class NMRViewerApp(QMainWindow):
     def _update_enabled_state(self):
         if not self.raw_data_list:
             return
-
         self.current_slice_list = []
         self.enabled_indices = []
-
         for i in range(len(self.raw_data_list)):
             if self.file_enabled_flags[i]:
                 self.enabled_indices.append(i)
                 data = self.raw_data_list[i]
-
                 if self.nz > 1 and data.ndim == 3:
-                    z_idx = getattr(self, 'slider_z', None) and self.slider_z.value() or 0
+                    z_idx = (self.slider_z.value() - 1) if hasattr(self, 'slider_z') and self.nz > 1 else 0
                     slices = [slice(None)] * 3
                     slices[self.z_dim] = z_idx
                     self.current_slice_list.append(data[tuple(slices)])
                 elif data.ndim in (1, 2):
                     self.current_slice_list.append(data)
-
         self.current_slice = next(iter(self.current_slice_list), None) if self.current_slice_list else None
 
     def on_file_toggled(self, index, enabled):
@@ -657,18 +681,6 @@ class NMRViewerApp(QMainWindow):
         if self.raw_data is not None:
             self._update_enabled_state()
             self.recompute_contours()
-
-    def on_z_changed(self):
-        if not self.raw_data_list:
-            return
-        self._update_enabled_state()
-
-        if self.nz > 1:
-            z_idx = self.slider_z.value()
-            z_ppm = self.ppm_z[z_idx] if hasattr(self, 'ppm_z') and self.ppm_z is not None else z_idx
-            self.lbl_z.setText(f"{self.label_z or 'Z'} = {z_ppm:.2f} ppm")
-
-        self.recompute_contours()
 
     def update_phase_ui_from_state(self):
         self.grp_phase.setTitle(f"Phase Correction ({self.active_axis.upper()}-Axis)")
@@ -690,9 +702,7 @@ class NMRViewerApp(QMainWindow):
             self.update_live_trace()
 
     def get_phase_vals(self, axis):
-        p0 = self.phase_state[axis]['p0']
-        p1 = self.phase_state[axis]['p1']
-        return p0, p1
+        return self.phase_state[axis]['p0'], self.phase_state[axis]['p1']
 
     def update_live_trace(self):
         if self.current_mode not in ['x_phase', 'y_phase', 'z_phase'] or self.current_slice is None:
@@ -708,50 +718,36 @@ class NMRViewerApp(QMainWindow):
 
         if self.current_mode == 'x_phase':
             trace = self.current_slice[:, y_idx] if self.slice_x_idx == 0 else self.current_slice[y_idx, :]
-            if is_real:
-                trace = hilbert(trace)
-            trace = ng.process.proc_base.ps(trace, p0=x_p0, p1=x_p1)
-            trace = np.real(trace)
+            if is_real: trace = hilbert(trace)
+            trace = np.real(ng.process.proc_base.ps(trace, p0=x_p0, p1=x_p1))
             y_mid = (view_y_range[0] + view_y_range[1]) / 2.0
-            vis_y_span = abs(view_y_range[1] - view_y_range[0])
-            scale = (vis_y_span * 0.25) / (np.max(np.abs(trace)) + 1e-9)
-            y_coords = y_mid - (trace * scale)
-            self.trace_curve.setData(self.ppm_x, y_coords)
+            scale = (abs(view_y_range[1] - view_y_range[0]) * 0.25) / (np.max(np.abs(trace)) + 1e-9)
+            self.trace_curve.setData(self.ppm_x, y_mid - (trace * scale))
 
         elif self.current_mode == 'y_phase':
             trace = self.current_slice[x_idx, :] if self.slice_x_idx == 0 else self.current_slice[:, x_idx]
-            if is_real:
-                trace = hilbert(trace)
-            trace = ng.process.proc_base.ps(trace, p0=y_p0, p1=y_p1)
-            trace = np.real(trace)
+            if is_real: trace = hilbert(trace)
+            trace = np.real(ng.process.proc_base.ps(trace, p0=y_p0, p1=y_p1))
             x_mid = (view_x_range[0] + view_x_range[1]) / 2.0
-            vis_x_span = abs(view_x_range[1] - view_x_range[0])
-            scale = (vis_x_span * 0.25) / (np.max(np.abs(trace)) + 1e-9)
-            x_coords = x_mid + (trace * scale)
-            self.trace_curve.setData(x_coords, self.ppm_y)
+            scale = (abs(view_x_range[1] - view_x_range[0]) * 0.25) / (np.max(np.abs(trace)) + 1e-9)
+            self.trace_curve.setData(x_mid + (trace * scale), self.ppm_y)
 
         elif self.current_mode == 'z_phase' and self.nz > 1:
             slices = [slice(None)] * 3
             slices[self.x_dim] = x_idx
             slices[self.y_dim] = y_idx
             trace = self.raw_data[tuple(slices)]
-            if is_real:
-                trace = hilbert(trace)
-            trace = ng.process.proc_base.ps(trace, p0=z_p0, p1=z_p1)
-            trace = np.real(trace)
+            if is_real: trace = hilbert(trace)
+            trace = np.real(ng.process.proc_base.ps(trace, p0=z_p0, p1=z_p1))
             y_mid = (view_y_range[0] + view_y_range[1]) / 2.0
-            vis_y_span = abs(view_y_range[1] - view_y_range[0])
-            scale = (vis_y_span * 0.25) / (np.max(np.abs(trace)) + 1e-9)
-            y_coords = y_mid - (trace * scale)
+            scale = (abs(view_y_range[1] - view_y_range[0]) * 0.25) / (np.max(np.abs(trace)) + 1e-9)
             x_coords = np.linspace(view_x_range[0], view_x_range[1], self.nz)
-            self.trace_curve.setData(x_coords, y_coords)
+            self.trace_curve.setData(x_coords, y_mid - (trace * scale))
 
     def recompute_contours(self):
-
         for item in self.contour_items:
             self.plot_2d.removeItem(item)
         self.contour_items.clear()
-
         if not self.enabled_indices:
             self.trace_curve.setData([], [])
             return
@@ -763,30 +759,20 @@ class NMRViewerApp(QMainWindow):
         if self.raw_data.ndim == 1:
             offset_val = self.cont_sliders['offset'].value()
             base_max = np.max(np.abs(self.current_slice_list[0])) if self.current_slice_list else 1.0
-
             for idx, orig_i in enumerate(self.enabled_indices):
                 raw_data = self.raw_data_list[orig_i]
                 plot_data = raw_data.copy()
-
                 is_real = not np.iscomplexobj(raw_data)
                 if x_p0 != 0 or x_p1 != 0:
-                    if is_real:
-                        tmp = hilbert(plot_data)
-                        plot_data = np.real(ng.process.proc_base.ps(tmp, p0=x_p0, p1=x_p1))
-                    else:
-                        plot_data = np.real(ng.process.proc_base.ps(plot_data, p0=x_p0, p1=x_p1))
+                    if is_real: plot_data = hilbert(plot_data)
+                    plot_data = np.real(ng.process.proc_base.ps(plot_data, p0=x_p0, p1=x_p1))
                 else:
-                    if not is_real:
-                        plot_data = np.real(plot_data)
-
-                shift = idx * offset_val * (base_max * 0.1)
-                y_data = plot_data + shift
-
+                    if not is_real: plot_data = np.real(plot_data)
+                y_data = plot_data + (idx * offset_val * (base_max * 0.1))
                 c_pos, _ = self.spectrum_colors[orig_i % len(self.spectrum_colors)]
                 curve = pg.PlotDataItem(x=self.ppm_x, y=y_data, pen=pg.mkPen(c_pos, width=1.5))
                 self.plot_2d.addItem(curve)
                 self.contour_items.append(curve)
-
             return
 
         base_mult = self.cont_sliders['base'].value()
@@ -800,84 +786,51 @@ class NMRViewerApp(QMainWindow):
 
             if raw_data.ndim == 3 and self.nz > 1 and (z_p0 != 0 or z_p1 != 0):
                 tmp_data = raw_data.copy()
-                if is_real:
-                    tmp_data = hilbert(tmp_data, axis=self.z_dim)
+                if is_real: tmp_data = hilbert(tmp_data, axis=self.z_dim)
                 tmp_data = np.swapaxes(tmp_data, self.z_dim, -1)
                 tmp_data = ng.process.proc_base.ps(tmp_data, p0=z_p0, p1=z_p1)
                 tmp_data = np.swapaxes(tmp_data, self.z_dim, -1)
                 slices = [slice(None)] * 3
-                slices[self.z_dim] = self.slider_z.value()
+                slices[self.z_dim] = self.slider_z.value() - 1
                 plot_data = np.real(tmp_data[tuple(slices)])
             else:
                 plot_data = c_slice.copy()
 
-            if any(v != 0 for v in [x_p0, x_p1, y_p0, y_p1]):
-                if is_real and (z_p0 == 0 and z_p1 == 0):
-                    if self.slice_x_idx == 1:
-                        if x_p0 != 0 or x_p1 != 0:
-                            tmp = hilbert(plot_data, axis=1)
-                            plot_data = np.real(ng.process.proc_base.ps(tmp, p0=x_p0, p1=x_p1))
-                        if y_p0 != 0 or y_p1 != 0:
-                            tmp = hilbert(plot_data, axis=0)
-                            plot_data = np.real(ng.process.proc_base.ps(tmp.T, p0=y_p0, p1=y_p1).T)
-                    else:
-                        if x_p0 != 0 or x_p1 != 0:
-                            tmp = hilbert(plot_data, axis=0)
-                            plot_data = np.real(ng.process.proc_base.ps(tmp.T, p0=x_p0, p1=x_p1).T)
-                        if y_p0 != 0 or y_p1 != 0:
-                            tmp = hilbert(plot_data, axis=1)
-                            plot_data = np.real(ng.process.proc_base.ps(tmp, p0=y_p0, p1=y_p1))
-                else:
-                    if self.slice_x_idx == 1:
-                        if x_p0 != 0 or x_p1 != 0:
-                            tmp = hilbert(plot_data, axis=1)
-                            plot_data = np.real(ng.process.proc_base.ps(tmp, p0=x_p0, p1=x_p1))
-                        if y_p0 != 0 or y_p1 != 0:
-                            tmp = hilbert(plot_data, axis=0)
-                            plot_data = np.real(ng.process.proc_base.ps(tmp.T, p0=y_p0, p1=y_p1).T)
-                    else:
-                        if x_p0 != 0 or x_p1 != 0:
-                            tmp = hilbert(plot_data, axis=0)
-                            plot_data = np.real(ng.process.proc_base.ps(tmp.T, p0=x_p0, p1=x_p1).T)
-                        if y_p0 != 0 or y_p1 != 0:
-                            tmp = hilbert(plot_data, axis=1)
-                            plot_data = np.real(ng.process.proc_base.ps(tmp, p0=y_p0, p1=y_p1))
+            if x_p0 != 0 or x_p1 != 0:
+                ax = 1 if self.slice_x_idx == 1 else 0
+                if is_real: plot_data = hilbert(plot_data, axis=ax)
+                if ax == 1: plot_data = np.real(ng.process.proc_base.ps(plot_data, p0=x_p0, p1=x_p1))
+                else: plot_data = np.real(ng.process.proc_base.ps(plot_data.T, p0=x_p0, p1=x_p1).T)
+            
+            if y_p0 != 0 or y_p1 != 0:
+                ax = 0 if self.slice_x_idx == 1 else 1
+                if is_real: plot_data = hilbert(plot_data, axis=ax)
+                if ax == 1: plot_data = np.real(ng.process.proc_base.ps(plot_data, p0=y_p0, p1=y_p1))
+                else: plot_data = np.real(ng.process.proc_base.ps(plot_data.T, p0=y_p0, p1=y_p1).T)
 
             vis_data = plot_data.T if self.slice_x_idx == 1 else plot_data
             nx, ny = vis_data.shape
-
             scale_x = (self.lim_x[1] - self.lim_x[0]) / max(1, nx - 1)
             scale_y = (self.lim_y[1] - self.lim_y[0]) / max(1, ny - 1)
-
             tr = QTransform()
             tr.translate(self.lim_x[0], self.lim_y[0])
             tr.scale(scale_x, scale_y)
 
             base_level = vis_data.std() * base_mult
             factors = scale_fact ** np.arange(count)
-            pos_levels = base_level * factors
-            neg_levels = -base_level * factors
-
             c_pos, c_neg = self.spectrum_colors[orig_i % len(self.spectrum_colors)]
 
-            for level in pos_levels:
-                if level > vis_data.max():
-                    break
+            for level in (base_level * factors):
+                if level > vis_data.max(): break
                 c = pg.IsocurveItem(data=vis_data, level=level, pen=pg.mkPen(c_pos, width=1.5))
-                c.setTransform(tr)
-                self.plot_2d.addItem(c)
-                self.contour_items.append(c)
+                c.setTransform(tr); self.plot_2d.addItem(c); self.contour_items.append(c)
 
-            for level in neg_levels:
-                if level < vis_data.min():
-                    break
+            for level in (-base_level * factors):
+                if level < vis_data.min(): break
                 c = pg.IsocurveItem(data=vis_data, level=level, pen=pg.mkPen(c_neg, width=1.5))
-                c.setTransform(tr)
-                self.plot_2d.addItem(c)
-                self.contour_items.append(c)
+                c.setTransform(tr); self.plot_2d.addItem(c); self.contour_items.append(c)
 
         self.update_live_trace()
-
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

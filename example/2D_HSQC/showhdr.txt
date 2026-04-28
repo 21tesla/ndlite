@@ -1,0 +1,34 @@
+showhdr hsqc-1.ft2 hsqc-1_TP.ft2 
+
+FILE: hsqc-1.ft2 DIM: 2 QUAD: Real 2DMODE: States Transposed
+BYTES: 1051648 PRED: 1051648 MIN: -820687 MAX: 3.14512e+07 VALID: 1
+ORDER: 1 2 PIPE: 0 CUBE: 0 FILES: 1 320x820x1
+
+               X-Axis        Y-Axis   
+
+DATA SIZE:           320          820
+APOD SIZE:           160          410
+SW Hz:       1490.312988  4205.784180
+OBS MHz:       70.967003   700.283020
+ORIG Hz:     7777.528320  3503.739014
+DOMAIN:             Freq         Freq
+MODE:               Real         Real
+NAME:                 N1           H1
+
+
+FILE: hsqc-1_TP.ft2 DIM: 2 QUAD: Real 2DMODE: States Not Transposed
+BYTES: 1051648 PRED: 1051648 MIN: -820687 MAX: 3.14512e+07 VALID: 1
+ORDER: 2 1 PIPE: 0 CUBE: 0 FILES: 1 820x320x1
+
+               X-Axis        Y-Axis   
+
+DATA SIZE:           820          320
+APOD SIZE:           410          160
+SW Hz:       4205.784180  1490.312988
+OBS MHz:      700.283020    70.967003
+ORIG Hz:     3503.739014  7777.528320
+DOMAIN:             Freq         Freq
+MODE:               Real         Real
+NAME:                 H1           N1
+
+
