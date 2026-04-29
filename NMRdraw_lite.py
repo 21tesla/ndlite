@@ -18,6 +18,7 @@ os.environ["LANG"] = "en_US.UTF-8"
 
 pg.setConfigOption('background', 'w')
 pg.setConfigOption('foreground', 'k')
+pg.setConfigOption('antialias', False)
 
 class TrackpadPlotWidget(pg.PlotWidget):
     def mousePressEvent(self, ev):
@@ -307,10 +308,9 @@ class NMRViewerApp(QMainWindow):
         self.plot_2d.scene().sigMouseClicked.connect(self.on_mouse_clicked)
 
         # Optimization: Width=1 for fast, cosmetic rendering
-        self.hline = pg.InfiniteLine(angle=0, movable=False, pen=pg.mkPen('g', width=1))
-        self.vline = pg.InfiniteLine(angle=90, movable=False, pen=pg.mkPen('g', width=1))
-        self.trace_curve = pg.PlotDataItem(pen=pg.mkPen(color='#DAA520', width=1))
-
+        self.hline = pg.InfiniteLine(angle=0, movable=False, pen=pg.mkPen('g', width=2))
+        self.vline = pg.InfiniteLine(angle=90, movable=False, pen=pg.mkPen('g', width=2))
+        self.trace_curve = pg.PlotDataItem(pen=pg.mkPen(color='#DAA520', width=2), autoDownsample=True, clipToView=True)
         self.plot_2d.addItem(self.hline)
         self.plot_2d.addItem(self.vline)
         self.plot_2d.addItem(self.trace_curve)
@@ -633,7 +633,7 @@ class NMRViewerApp(QMainWindow):
             for idx in range(len(file_names)):
                 if is_1d:
                     c_pos, _ = self.spectrum_colors[idx]
-                    curve = pg.PlotDataItem(pen=pg.mkPen(c_pos, width=1))
+                    curve = pg.PlotDataItem(pen=pg.mkPen(c_pos, width=1), autoDownsample=True, clipToView=True)
                     self.plot_2d.addItem(curve)
                     self.file_curves_1d.append(curve)
                     self.file_groups.append(None)
