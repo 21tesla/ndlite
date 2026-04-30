@@ -32,7 +32,7 @@ Thank you to **Dr. Frank Delagio** (IBBR / U Maryland) for the original NMRdraw 
 
 ![1D_example](assets/1D_example.png)
 
-**2D Spectra:** quick visualization of titrations
+**2D Spectra:** auto and manual peak picking
 
 ![2D_example](assets/2D_example.png)
 
