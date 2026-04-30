@@ -5,12 +5,18 @@ import os
 import numpy as np
 import nmrglue as ng
 from scipy.signal import hilbert
-from PyQt6.QtGui import QTransform, QColor, QFont, QMouseEvent
+from scipy.optimize import curve_fit
+
+import pyqtgraph.exporters 
+
+from PyQt6.QtGui import QTransform, QColor, QFont, QMouseEvent, QAction
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QHBoxLayout, QGridLayout, QPushButton, QFileDialog,
                              QLabel, QSlider, QGroupBox, QDoubleSpinBox, QSpinBox,
-                             QScrollArea, QColorDialog, QCheckBox)
-from PyQt6.QtCore import Qt
+                             QScrollArea, QColorDialog, QCheckBox, QMessageBox, QDialog)
+                             
+from PyQt6.QtCore import Qt, QTimer
+
 import pyqtgraph as pg
 
 os.environ["LC_ALL"] = "en_US.UTF-8"
@@ -93,6 +99,7 @@ class NMRViewerApp(QMainWindow):
         self.cont_widgets = {}
 
         self.init_ui()
+        self.create_menus()
         if file_paths:
             self.load_files(file_paths)
 
@@ -315,6 +322,12 @@ class NMRViewerApp(QMainWindow):
         self.plot_2d.addItem(self.vline)
         self.plot_2d.addItem(self.trace_curve)
 
+        self.peaks_scatter = pg.ScatterPlotItem(size=10, pen=pg.mkPen('k'), brush=pg.mkBrush(255, 0, 0, 150))
+        self.plot_2d.addItem(self.peaks_scatter)
+        self.picked_peaks = []
+        self.peak_counter = 0
+        self.peak_text_items = {}
+        
         self.hline.setVisible(False)
         self.vline.setVisible(False)
         self.trace_curve.setVisible(False)
@@ -370,6 +383,18 @@ class NMRViewerApp(QMainWindow):
             self.trace_curve.setVisible(True)
             self.plot_2d.setTitle("Phasing Z-Axis. Press Esc to exit.")
             self.update_live_trace()
+        elif mode == 'peak_pick':
+            self.active_axis = None
+            self.grp_phase.setEnabled(False)
+            self.hline.setVisible(True)
+            self.vline.setVisible(True)
+            self.plot_2d.setTitle("Peak Picking Mode. Click near a peak to refine. Press Esc to exit.")
+        elif mode == 'peak_delete':
+            self.active_axis = None
+            self.grp_phase.setEnabled(False)
+            self.hline.setVisible(True)
+            self.vline.setVisible(True)
+            self.plot_2d.setTitle("Delete Mode: Click near a peak to remove it. Press Esc to exit.")
         elif mode is None:
             self.grp_phase.setEnabled(False)
             self.grp_phase.setTitle("Phase Correction")
@@ -378,22 +403,30 @@ class NMRViewerApp(QMainWindow):
                 if self.raw_data.ndim == 1:
                     self.hline.setVisible(False)
                     self.vline.setVisible(False)
-                    self.plot_2d.setTitle("1D Mode. Press 'x' to phase.")
+                    self.plot_2d.setTitle("1D Mode. Press 'x' to phase. | 'h' for help")
                 else:
                     self.hline.setVisible(True)
                     self.vline.setVisible(True)
                     if self.raw_data.ndim == 2:
-                        self.plot_2d.setTitle(f"{self.label_x}={self.v_pos:.3f}, {self.label_y}={self.h_pos:.3f} | Press 'x' or 'y' to phase.")
+                        self.plot_2d.setTitle(f"{self.label_x}={self.v_pos:.3f}, {self.label_y}={self.h_pos:.3f} | Press 'x' or 'y' to phase. | 'h' for help")
                     else:
-                        self.plot_2d.setTitle(f"{self.label_x}={self.v_pos:.3f}, {self.label_y}={self.h_pos:.3f} | Press 'x', 'y', 'z' to phase.")
+                        self.plot_2d.setTitle(f"{self.label_x}={self.v_pos:.3f}, {self.label_y}={self.h_pos:.3f} | Press 'x', 'y', 'z' to phase. | 'h' for help")
             else:
                 self.hline.setVisible(False)
                 self.vline.setVisible(False)
                 self.plot_2d.setTitle("Please load a file.")
-
+                
     def on_mouse_moved(self, pos):
-        if self.current_mode is not None or self.raw_data is None or self.raw_data.ndim == 1:
+        # Freeze crosshair updates while the export dialog is active
+        if getattr(self, 'is_exporting', False):
             return
+            
+        if (self.current_mode is not None and self.current_mode not in ['peak_pick', 'peak_delete']) or self.raw_data is None:
+            return
+            
+        if self.raw_data.ndim == 1 and self.current_mode not in ['peak_pick', 'peak_delete']:
+            return
+            
         view_box = self.plot_2d.getViewBox()
         if view_box.sceneBoundingRect().contains(pos):
             mouse_point = view_box.mapSceneToView(pos)
@@ -401,12 +434,24 @@ class NMRViewerApp(QMainWindow):
             self.v_pos = mouse_point.x()
             self.hline.setPos(self.h_pos)
             self.vline.setPos(self.v_pos)
-            self.hline.setVisible(True)
+            
+            self.hline.setVisible(self.raw_data.ndim > 1)
             self.vline.setVisible(True)
-            if self.raw_data.ndim == 2:
-                self.plot_2d.setTitle(f"{self.label_x}={self.v_pos:.3f}, {self.label_y}={self.h_pos:.3f} | Press 'x' or 'y' to phase.")
-            else:
-                self.plot_2d.setTitle(f"{self.label_x}={self.v_pos:.3f}, {self.label_y}={self.h_pos:.3f} | Press 'x', 'y', 'z' to phase.")
+            
+            if self.current_mode == 'peak_pick':
+                if self.raw_data.ndim == 1:
+                    self.plot_2d.setTitle(f"Peak Pick: {self.label_x}={self.v_pos:.3f} | Shift-Click or Shift-P to force pick")
+                else:
+                    self.plot_2d.setTitle(f"Peak Pick: {self.label_x}={self.v_pos:.3f}, {self.label_y}={self.h_pos:.3f} | Shift-Click or Shift-P to force")
+            elif self.current_mode == 'peak_delete':
+                if self.raw_data.ndim == 1:
+                    self.plot_2d.setTitle(f"Peak Delete: {self.label_x}={self.v_pos:.3f} | Click to delete")
+                else:
+                    self.plot_2d.setTitle(f"Peak Delete: {self.label_x}={self.v_pos:.3f}, {self.label_y}={self.h_pos:.3f} | Click to delete")
+            elif self.raw_data.ndim == 2:
+                self.plot_2d.setTitle(f"{self.label_x}={self.v_pos:.3f}, {self.label_y}={self.h_pos:.3f} | Press 'x' or 'y' to phase. | 'h' for help")
+            elif self.raw_data.ndim >= 3:
+                self.plot_2d.setTitle(f"{self.label_x}={self.v_pos:.3f}, {self.label_y}={self.h_pos:.3f} | Press 'x', 'y', 'z' to phase. | 'h' for help")
         else:
             self.hline.setVisible(False)
             self.vline.setVisible(False)
@@ -418,14 +463,61 @@ class NMRViewerApp(QMainWindow):
             self.vline.setVisible(False)
             self.trace_curve.setVisible(False)
             self.plot_2d.setTitle(" ")
-
+            
+        elif event.button() == Qt.MouseButton.LeftButton:
+            if self.current_mode in ['peak_pick', 'peak_delete']:
+                view_box = self.plot_2d.getViewBox()
+                mouse_point = view_box.mapSceneToView(event.scenePos())
+                click_ppm_x = mouse_point.x()
+                click_ppm_y = mouse_point.y()
+                
+                if self.current_mode == 'peak_pick':
+                    if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
+                        self.peak_counter += 1
+                        self.picked_peaks.append({'id': self.peak_counter, 'ppm_x': click_ppm_x, 'ppm_y': click_ppm_y})
+                        self.update_peak_markers()
+                    else:
+                        self.refine_peak(click_ppm_x, click_ppm_y)
+                elif self.current_mode == 'peak_delete':
+                    self.delete_nearest_peak(click_ppm_x, click_ppm_y)
+                
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Escape:
             self.set_mode(None)
             return
+            
+        # Add Shift-R for sequential renumbering
+        if event.key() == Qt.Key.Key_R and (event.modifiers() & Qt.KeyboardModifier.ShiftModifier):
+            self.renumber_peaks()
+            return
+            
         text = event.text().lower()
         ndim = self.raw_data.ndim if self.raw_data is not None else 0
 
+        if text == 'd':
+            self.set_mode('peak_delete')
+            return
+
+        if text == 'h':
+            self.show_help_dialog()
+            return
+
+        if text == 's':
+            self.save_peaks()
+            return
+
+        if text == 'p':
+            if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
+                if self.raw_data is not None:
+                    if self.current_mode != 'peak_pick':
+                        self.set_mode('peak_pick')
+                    self.peak_counter += 1
+                    self.picked_peaks.append({'id': self.peak_counter, 'ppm_x': self.v_pos, 'ppm_y': self.h_pos})
+                    self.update_peak_markers()
+            else:
+                self.set_mode('peak_pick')
+            return
+                        
         if ndim == 1:
             if text == 'x':
                 self.set_mode('x_phase')
@@ -441,7 +533,8 @@ class NMRViewerApp(QMainWindow):
                 self.set_mode('y_phase')
             elif text == 'z':
                 self.set_mode('z_phase')
-
+                
+                            
     def load_file_dialog(self):
         file_names, _ = QFileDialog.getOpenFileNames(self, "Open NMRPipe File(s)", "", "NMRPipe (*.ft *.ft1 *.ft2 *.ft3)")
         if file_names:
@@ -451,7 +544,6 @@ class NMRViewerApp(QMainWindow):
         if not file_names:
             return
             
-        # Optimization: Clean up memory / object pools from previous loads
         if hasattr(self, 'file_groups'):
             for g in self.file_groups:
                 if g is not None: self.plot_2d.removeItem(g)
@@ -629,7 +721,6 @@ class NMRViewerApp(QMainWindow):
             if ndim > 1:
                 self.slice_x_idx = 1
                 
-            # Initialize appropriate object pools per file
             for idx in range(len(file_names)):
                 if is_1d:
                     c_pos, _ = self.spectrum_colors[idx]
@@ -781,8 +872,9 @@ class NMRViewerApp(QMainWindow):
         if not self.raw_data_list:
             return
 
-        # Optimization: Disable bounding box recalculations during heavy loop
         self.plot_2d.getViewBox().disableAutoRange()
+        if not hasattr(self, 'vis_data_dict'):
+            self.vis_data_dict = {}
 
         if not self.enabled_indices:
             self.trace_curve.setData([], [])
@@ -816,11 +908,12 @@ class NMRViewerApp(QMainWindow):
                     plot_data = np.real(ng.process.proc_base.ps(plot_data, p0=x_p0, p1=x_p1))
                 else:
                     if not is_real: plot_data = np.real(plot_data)
+
+                self.vis_data_dict[orig_i] = plot_data.copy()                
                 
                 y_data = plot_data + (idx * offset_val * (base_max * 0.1))
                 c_pos, _ = self.spectrum_colors[orig_i % len(self.spectrum_colors)]
                 
-                # Update item via pool instead of clearing plot
                 curve.setData(x=self.ppm_x, y=y_data)
                 curve.setPen(pg.mkPen(c_pos, width=1))
                 curve.setVisible(True)
@@ -869,17 +962,22 @@ class NMRViewerApp(QMainWindow):
                 else: plot_data = np.real(ng.process.proc_base.ps(plot_data.T, p0=y_p0, p1=y_p1).T)
 
             vis_data = plot_data.T if self.slice_x_idx == 1 else plot_data
+            self.vis_data_dict[orig_i] = vis_data.copy()
             nx, ny = vis_data.shape
             
-            # Optimization: Assign Transform exclusively to ItemGroup (Matrix Batching)
-            scale_x = (self.lim_x[1] - self.lim_x[0]) / max(1, nx - 1)
-            scale_y = (self.lim_y[1] - self.lim_y[0]) / max(1, ny - 1)
+            ppm_x_span = self.ppm_x[-1] - self.ppm_x[0] if len(self.ppm_x) > 1 else 1.0
+            ppm_y_span = self.ppm_y[-1] - self.ppm_y[0] if len(self.ppm_y) > 1 else 1.0
+            scale_x = ppm_x_span / max(1, nx - 1)
+            scale_y = ppm_y_span / max(1, ny - 1)
+            
             tr = QTransform()
-            tr.translate(self.lim_x[0], self.lim_y[0])
+            tr.translate(self.ppm_x[0] - 0.5 * scale_x, self.ppm_y[0] - 0.5 * scale_y)
             tr.scale(scale_x, scale_y)
             group.setTransform(tr)
-
-            base_level = vis_data.std() * base_mult
+            
+            noise_rmsd = self.calculate_rmsd(vis_data)
+            base_level = noise_rmsd * base_mult
+            
             factors = scale_fact ** np.arange(count)
             c_pos, c_neg = self.spectrum_colors[orig_i % len(self.spectrum_colors)]
 
@@ -894,7 +992,6 @@ class NMRViewerApp(QMainWindow):
             all_levels = pos_levels + neg_levels
             is_pos = [True]*len(pos_levels) + [False]*len(neg_levels)
 
-            # Optimization: Re-using pooled instances to prevent allocation/garbage collection
             pool_idx = 0
             for level, pos_flag in zip(all_levels, is_pos):
                 pen_color = c_pos if pos_flag else c_neg
@@ -911,12 +1008,426 @@ class NMRViewerApp(QMainWindow):
                     pool.append(item)
                 pool_idx += 1
 
-            # Hide any trailing, unused items in the active pool
             for i in range(pool_idx, len(pool)):
                 pool[i].setVisible(False)
 
         self.update_live_trace()
+        
+    def calculate_rmsd(self, data):
+        flat_data = data.flatten()
+        med = np.median(flat_data)
+        mad = np.median(np.abs(flat_data - med))
+        
+        sigma = mad * 1.4826
+        
+        if sigma == 0:
+            return np.std(flat_data)
+        return sigma
 
+    def refine_peak(self, click_ppm_x, click_ppm_y):
+        if not self.enabled_indices or self.current_slice is None: 
+            return
+
+        orig_i = self.enabled_indices[0]
+        if not hasattr(self, 'vis_data_dict') or orig_i not in self.vis_data_dict:
+            return
+            
+        vis_data = self.vis_data_dict[orig_i]
+        
+        x_idx_center = np.argmin(np.abs(self.ppm_x - click_ppm_x))
+        window = 5 
+
+        if vis_data.ndim == 1:
+            start_x = max(0, x_idx_center - window)
+            end_x = min(len(self.ppm_x), x_idx_center + window + 1)
+            
+            local_data = vis_data[start_x:end_x]
+            if local_data.size == 0: return
+            
+            center_idx = x_idx_center - start_x
+            try:
+                sign = 1 if local_data[center_idx] >= 0 else -1
+            except IndexError:
+                sign = 1
+                
+            max_loc = np.argmax(local_data) if sign > 0 else np.argmin(local_data)
+            true_x_idx = start_x + max_loc
+
+            offset = 0
+            if 0 < true_x_idx < len(self.ppm_x) - 1:
+                alpha = vis_data[true_x_idx - 1]
+                beta = vis_data[true_x_idx]
+                gamma = vis_data[true_x_idx + 1]
+                denom = alpha - 2*beta + gamma
+                if denom != 0:
+                    offset = 0.5 * (alpha - gamma) / denom
+            
+            ppm_step = self.ppm_x[1] - self.ppm_x[0] if len(self.ppm_x) > 1 else 0
+            refined_ppm_x = self.ppm_x[true_x_idx] + offset * ppm_step
+            
+            self.peak_counter += 1
+            self.picked_peaks.append({'id': self.peak_counter, 'ppm_x': refined_ppm_x, 'ppm_y': click_ppm_y})
+            self.update_peak_markers()
+
+        elif vis_data.ndim == 2:
+            y_idx_center = np.argmin(np.abs(self.ppm_y - click_ppm_y))
+            
+            start_x = max(0, x_idx_center - window)
+            end_x = min(len(self.ppm_x), x_idx_center + window + window + 1)
+            start_y = max(0, y_idx_center - window)
+            end_y = min(len(self.ppm_y), y_idx_center + window + 1)
+
+            local_data = vis_data[start_x:end_x, start_y:end_y]
+            if local_data.size == 0: return
+
+            center_x_local = x_idx_center - start_x
+            center_y_local = y_idx_center - start_y
+            try:
+                sign = 1 if local_data[center_x_local, center_y_local] >= 0 else -1
+            except IndexError:
+                sign = 1
+
+            if sign > 0:
+                max_idx = np.unravel_index(np.argmax(local_data), local_data.shape)
+            else:
+                max_idx = np.unravel_index(np.argmin(local_data), local_data.shape)
+
+            true_x_idx = start_x + max_idx[0]
+            true_y_idx = start_y + max_idx[1]
+
+            offset_x = 0
+            if 0 < true_x_idx < len(self.ppm_x) - 1:
+                alpha = vis_data[true_x_idx - 1, true_y_idx]
+                beta  = vis_data[true_x_idx, true_y_idx]
+                gamma = vis_data[true_x_idx + 1, true_y_idx]
+                denom = alpha - 2*beta + gamma
+                if denom != 0: offset_x = 0.5 * (alpha - gamma) / denom
+
+            offset_y = 0
+            if 0 < true_y_idx < len(self.ppm_y) - 1:
+                alpha = vis_data[true_x_idx, true_y_idx - 1]
+                beta  = vis_data[true_x_idx, true_y_idx]
+                gamma = vis_data[true_x_idx, true_y_idx + 1]
+                denom = alpha - 2*beta + gamma
+                if denom != 0: offset_y = 0.5 * (alpha - gamma) / denom
+
+            ppm_step_x = self.ppm_x[1] - self.ppm_x[0] if len(self.ppm_x) > 1 else 0
+            ppm_step_y = self.ppm_y[1] - self.ppm_y[0] if len(self.ppm_y) > 1 else 0
+
+            refined_ppm_x = self.ppm_x[true_x_idx] + offset_x * ppm_step_x
+            refined_ppm_y = self.ppm_y[true_y_idx] + offset_y * ppm_step_y
+
+            self.peak_counter += 1
+            self.picked_peaks.append({'id': self.peak_counter, 'ppm_x': refined_ppm_x, 'ppm_y': refined_ppm_y})
+            self.update_peak_markers()
+            
+    def update_peak_markers(self):
+        spots = []
+        current_ids = set()
+        
+        for p in self.picked_peaks:
+            pid = p['id']
+            current_ids.add(pid)
+            spots.append({'pos': (p['ppm_x'], p['ppm_y']), 'data': pid})
+
+            if pid not in self.peak_text_items:
+                text_item = pg.TextItem(text=str(pid), color=(0, 0, 0), anchor=(-0.2, 0.5)) 
+                text_item.setPos(p['ppm_x'], p['ppm_y'])
+                self.plot_2d.addItem(text_item)
+                self.peak_text_items[pid] = text_item
+
+        self.peaks_scatter.setData(spots)
+
+        ids_to_remove = set(self.peak_text_items.keys()) - current_ids
+        for pid in ids_to_remove:
+            self.plot_2d.removeItem(self.peak_text_items[pid])
+            del self.peak_text_items[pid]
+
+    def delete_nearest_peak(self, click_x, click_y):
+        if not self.picked_peaks:
+            return
+            
+        vb = self.plot_2d.getViewBox()
+        x_range, y_range = vb.viewRange()
+        dx_scale = max(abs(x_range[1] - x_range[0]), 1e-6)
+        dy_scale = max(abs(y_range[1] - y_range[0]), 1e-6)
+        
+        best_idx = -1
+        min_dist = float('inf')
+        
+        for i, p in enumerate(self.picked_peaks):
+            dx = (p['ppm_x'] - click_x) / dx_scale
+            dy = (p['ppm_y'] - click_y) / dy_scale
+            dist = dx**2 + dy**2
+            if dist < min_dist:
+                min_dist = dist
+                best_idx = i
+                
+        if min_dist < 0.01 and best_idx != -1:
+            del self.picked_peaks[best_idx]
+            self.update_peak_markers()
+
+    def renumber_peaks(self):
+        if not self.picked_peaks:
+            self.plot_2d.setTitle("No peaks to renumber.")
+            return
+            
+        # Clear existing text items from the plot to prevent overlapping numbers
+        for pid, text_item in self.peak_text_items.items():
+            self.plot_2d.removeItem(text_item)
+        self.peak_text_items.clear()
+        
+        # Renumber sequentially
+        for i, p in enumerate(self.picked_peaks):
+            p['id'] = i + 1
+            
+        # Update the global counter to match the new highest ID
+        self.peak_counter = len(self.picked_peaks)
+        
+        # Redraw markers with the newly assigned IDs
+        self.update_peak_markers()
+        self.plot_2d.setTitle("Success: Peaks renumbered sequentially.")
+        
+    def show_help_dialog(self):
+        dlg = QDialog(self)
+        dlg.setWindowTitle("NMRdraw_lite Shortcuts")
+        dlg.setFixedSize(600, 450) 
+        
+        layout = QVBoxLayout(dlg)
+        
+        help_text = """
+        <div style='font-size: 12px; line-height: 1.4;'>
+            <h3>NMRdraw_lite Shortcuts</h3>
+            <table width="100%">
+                <tr><td width="120"><b>h</b></td><td>Show this help message</td></tr>
+                <tr><td><b>p</b></td><td>Peak Pick mode (Click near a peak to snap to max/min)</td></tr>
+                <tr><td><b>Shift + p</b></td><td>Force pick peak exactly at current crosshair</td></tr>
+                <tr><td><b>d</b></td><td>Peak Delete mode (Click near a peak to remove)</td></tr>
+                <tr><td><b>Shift + r</b></td><td>Renumber peaks sequentially</td></tr>
+                <tr><td><b>s</b></td><td>Save peak list to file</td></tr>
+                <tr><td><b>x, y, z</b></td><td>Phase along respective axis</td></tr>
+                <tr><td><b>Esc</b></td><td>Exit current mode / return to default</td></tr>
+            </table>
+            <hr>
+            <h3>Mouse Controls</h3>
+            <table width="100%">
+                <tr><td width="120"><b>Alt + Left Drag</b></td><td>Pan spectrum (simulates Middle-Click)</td></tr>
+                <tr><td><b>Right Click</b></td><td>Hide crosshairs</td></tr>
+            </table>
+        </div>
+        """
+        
+        lbl = QLabel(help_text)
+        lbl.setTextFormat(Qt.TextFormat.RichText)
+        lbl.setWordWrap(True)
+        layout.addWidget(lbl)
+        
+        btn = QPushButton("Close")
+        btn.clicked.connect(dlg.accept)
+        layout.addWidget(btn)
+        
+        dlg.exec()
+                
+    def create_menus(self):
+        menubar = self.menuBar()
+        # Ensures the menu is rendered in the macOS top system menubar
+        menubar.setNativeMenuBar(True) 
+
+        # --- File Menu ---
+        file_menu = menubar.addMenu("File")
+        
+        save_peaks_action = QAction("Save Peaks", self)
+        save_peaks_action.setShortcut("s")
+        save_peaks_action.triggered.connect(self.save_peaks)
+        file_menu.addAction(save_peaks_action)
+        
+        # New Export Sub-menu
+        export_menu = file_menu.addMenu("Export")
+        
+        export_spectrum_action = QAction("Spectrum", self)
+        export_spectrum_action.triggered.connect(self.export_spectrum)
+        export_menu.addAction(export_spectrum_action)
+        
+        export_peaks_action = QAction("Peaks + Spectrum", self)
+        export_peaks_action.triggered.connect(self.export_peaks_spectrum)
+        export_menu.addAction(export_peaks_action)
+        
+                
+        # --- Peaks Menu ---
+        peaks_menu = menubar.addMenu("Peaks")
+        
+        auto_pick_action = QAction("Auto Pick", self)
+        auto_pick_action.triggered.connect(self.auto_pick)
+        peaks_menu.addAction(auto_pick_action)
+        
+        pick_peaks_action = QAction("Pick Peaks", self)
+        pick_peaks_action.setShortcut("p")
+        pick_peaks_action.triggered.connect(lambda: self.set_mode('peak_pick'))
+        peaks_menu.addAction(pick_peaks_action)
+        
+        force_pick_action = QAction("Force Pick", self)
+        force_pick_action.setShortcut("Shift+P")
+        force_pick_action.triggered.connect(self.force_pick)
+        peaks_menu.addAction(force_pick_action)
+
+        # New Show/Hide Actions
+        show_peaks_action = QAction("Show Peaks", self)
+        show_peaks_action.setShortcut("Shift+S")
+        show_peaks_action.triggered.connect(self.show_peaks)
+        peaks_menu.addAction(show_peaks_action)
+        
+        hide_peaks_action = QAction("Hide Peaks", self)
+        hide_peaks_action.setShortcut("Shift+H")
+        hide_peaks_action.triggered.connect(self.hide_peaks)
+        peaks_menu.addAction(hide_peaks_action)
+        
+        delete_peaks_action = QAction("Delete Peaks", self)
+        delete_peaks_action.setShortcut("d")
+        delete_peaks_action.triggered.connect(lambda: self.set_mode('peak_delete'))
+        peaks_menu.addAction(delete_peaks_action)
+        
+        renumber_peaks_action = QAction("Renumber Peaks", self)
+        renumber_peaks_action.setShortcut("Shift+R")
+        renumber_peaks_action.triggered.connect(self.renumber_peaks)
+        peaks_menu.addAction(renumber_peaks_action)
+        
+        peaks_menu.addAction(save_peaks_action)
+                
+        # --- Extras Menu ---
+        extras_menu = menubar.addMenu("Extras")
+        
+        help_action = QAction("Help", self)
+        help_action.setShortcut("h")
+        help_action.triggered.connect(self.show_help_dialog)
+        extras_menu.addAction(help_action)
+        
+    def export_spectrum(self):
+        self._export_with_mode('spectrum')
+
+    def export_peaks_spectrum(self):
+        self._export_with_mode('peaks')
+
+    def _export_with_mode(self, mode):
+        self.is_exporting = True
+        
+        # Store current visibility states so we can restore them exactly
+        self._export_state = {
+            'hline': self.hline.isVisible(),
+            'vline': self.vline.isVisible(),
+            'trace': self.trace_curve.isVisible(),
+            'scatter': self.peaks_scatter.isVisible(),
+            'texts': {pid: item.isVisible() for pid, item in self.peak_text_items.items()}
+        }
+        
+        # Hide crosshairs, live trace, and the plot title
+        self.hline.setVisible(False)
+        self.vline.setVisible(False)
+        self.trace_curve.setVisible(False)
+        self.plot_2d.setTitle(" ")
+        
+        # Toggle peaks based on the selected menu option
+        if mode == 'spectrum':
+            self.hide_peaks()
+        elif mode == 'peaks':
+            self.show_peaks()
+                
+        # Trigger export dialog
+        scene = self.plot_2d.scene()
+        scene.contextMenuItem = self.plot_2d.getPlotItem()
+        scene.showExportDialog()
+        
+        # Setup a robust timer to check when the dialog is closed
+        if not hasattr(self, 'export_poll_timer'):
+            self.export_poll_timer = QTimer(self)
+            self.export_poll_timer.timeout.connect(self._check_export_dialog_closed)
+        self.export_poll_timer.start(200)
+
+    def _check_export_dialog_closed(self):
+        try:
+            scene = self.plot_2d.scene()
+            # Stop the timer and restore the UI once the dialog is no longer visible
+            if not hasattr(scene, 'exportDialog') or scene.exportDialog is None or not scene.exportDialog.isVisible():
+                self.export_poll_timer.stop()
+                self._restore_export_state()
+        except RuntimeError:
+            # Failsafe in case the underlying C++ object is deleted abruptly
+            self.export_poll_timer.stop()
+            self._restore_export_state()
+
+    def _restore_export_state(self):
+        self.is_exporting = False
+        
+        # Restore the exact visibility states from before the export
+        if hasattr(self, '_export_state'):
+            self.hline.setVisible(self._export_state.get('hline', False))
+            self.vline.setVisible(self._export_state.get('vline', False))
+            self.trace_curve.setVisible(self._export_state.get('trace', False))
+            self.peaks_scatter.setVisible(self._export_state.get('scatter', True))
+            
+            for pid, item in self.peak_text_items.items():
+                if pid in self._export_state['texts']:
+                    item.setVisible(self._export_state['texts'][pid])
+                
+        # Trigger set_mode to safely restore the proper plot title
+        self.set_mode(self.current_mode)
+        
+                        
+    def auto_pick(self):
+        # Placeholder for future development
+        QMessageBox.information(self, "Feature in Progress", "Auto Peak Picking will be implemented in a future update.")
+
+    def force_pick(self):
+        if self.raw_data is not None:
+            if self.current_mode != 'peak_pick':
+                self.set_mode('peak_pick')
+            self.peak_counter += 1
+            self.picked_peaks.append({'id': self.peak_counter, 'ppm_x': self.v_pos, 'ppm_y': self.h_pos})
+            self.update_peak_markers()
+            
+    def save_peaks(self):
+        if not self.picked_peaks:
+            self.plot_2d.setTitle("No peaks to save.")
+            return
+            
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Save Peaks", "peaks.txt", "Text Files (*.txt);;All Files (*)"
+        )
+        
+        if file_path:
+            try:
+                ndim = self.raw_data.ndim if self.raw_data is not None else 0
+                
+                # Helper function to calculate exact fractional point
+                def calc_pt(ppm_val, ppm_array):
+                    if ppm_array is None or len(ppm_array) <= 1: return 0.0
+                    return (ppm_val - ppm_array[0]) / (ppm_array[-1] - ppm_array[0]) * (len(ppm_array) - 1)
+
+                with open(file_path, "w") as f:
+                    if ndim == 1:
+                        f.write(f"Index\t{self.label_x}_ppm\t{self.label_x}_pt\n")
+                        for p in self.picked_peaks:
+                            pt_x = calc_pt(p['ppm_x'], self.ppm_x)
+                            f.write(f"{p['id']}\t{p['ppm_x']:.5f}\t{pt_x:.5f}\n")
+                    else:
+                        f.write(f"Index\t{self.label_x}_ppm\t{self.label_y}_ppm\t{self.label_x}_pt\t{self.label_y}_pt\n")
+                        for p in self.picked_peaks:
+                            pt_x = calc_pt(p['ppm_x'], self.ppm_x)
+                            pt_y = calc_pt(p['ppm_y'], self.ppm_y)
+                            f.write(f"{p['id']}\t{p['ppm_x']:.5f}\t{p['ppm_y']:.5f}\t{pt_x:.5f}\t{pt_y:.5f}\n")
+                self.plot_2d.setTitle(f"Success: Picked peaks saved to {os.path.basename(file_path)}")
+            except Exception as e:
+                self.plot_2d.setTitle(f"Error saving peaks: {e}")                
+
+    def show_peaks(self):
+        self.peaks_scatter.setVisible(True)
+        for item in self.peak_text_items.values():
+            item.setVisible(True)
+
+    def hide_peaks(self):
+        self.peaks_scatter.setVisible(False)
+        for item in self.peak_text_items.values():
+            item.setVisible(False)
+                                                    
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     passed_files = [f for f in sys.argv[1:] if os.path.isfile(f)]
