@@ -8,6 +8,20 @@ __pycache__/
 # PyInstaller artifacts
 build/
 dist/
+releases/
 *.spec
 *.app
 *.zip
+setup_arm64.py
+setup_intel.py
+entitlements.plist
+make_arm64_app.bash
+make_installer_arm64.bash
+make_installer_intel.bash
+make_intel_app.bash
+NMRdraw_dpg.py
+run_arm64_py2app.bash
+run_intel_py2app.bash
+setup_intel_env.txt
+icons/
+
