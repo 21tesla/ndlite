@@ -14,7 +14,7 @@
 ```
 pip install -r requirements.txt 
 
-python NMRdraw_lite.py [file1.ft file2.ft ...]
+python main.py [file1.ft file2.ft ...]
 ```
 
 ## Example Data
