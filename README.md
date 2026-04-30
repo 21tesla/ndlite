@@ -6,7 +6,7 @@
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![macOS](https://img.shields.io/badge/macOS-Standalone_App-white?logo=apple&logoColor=black)
 
-### A fast, lightweight Python utility for viewing  NMR data processed with NMRpipe. 
+### A fast, lightweight Python utility for viewing NMR data processed with NMRpipe. 
 
 
 ## Installation
@@ -22,7 +22,7 @@ The `example/` directory contains sample datasets from my laboratory.
  
 
 ## Standalone MacOS App
-Look in the **Releases** directory for standalone apps for [**Apple Silicon**](https://github.com/21tesla/NMRdraw_lite/releases/download/1.0_arm64/NMRdraw_lite_arm64.dmg) and  [**Intel**](https://github.com/21tesla/NMRdraw_lite/releases/download/1.0_intel/NMRdraw_lite_intel.dmg) Macs.
+Look in the **Releases** directory for standalone apps for [**Apple Silicon**](https://github.com/21tesla/NMRdraw_lite/releases/download/1.0_arm64/NMRdraw_lite_arm64.dmg) Macs.
 
 ## Acknowledgements
 Thank you to **Dr. Frank Delagio** (IBBR / U Maryland) for the original NMRdraw that has been used for decades and **Dr. Johnthan Helmus** (www.nmrglue.com) for the nmrglue framework that powers all the visualization and reads NMR data formats. 
