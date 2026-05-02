@@ -3,7 +3,10 @@ import os
 import numpy as np
 import nmrglue as ng
 import json
+import ssl
+import certifi 
 import urllib.request
+from urllib.request import urlopen, Request
 import webbrowser
 
 from scipy.signal import hilbert
@@ -1464,9 +1467,12 @@ class NMRViewerApp(QMainWindow):
         url = f"https://api.github.com/repos/{repo}/releases/latest"
         
         try:
-            # GitHub's API requires a User-Agent header
-            req = urllib.request.Request(url, headers={'User-Agent': 'NMRdraw_lite-App'})
-            with urllib.request.urlopen(req, timeout=3) as response:
+            # Create a context that uses certifi's updated certificates
+            context = ssl.create_default_context(cafile=certifi.where())
+        
+            req = Request(url, headers={'User-Agent': 'NMRdraw_lite-Updater'})
+            with urlopen(req, context=context) as response:
+
                 data = json.loads(response.read().decode())
                 
                 # GitHub tags usually have a 'v' prefix (e.g., 'v1.1.0'). Strip it for comparison.
