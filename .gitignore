@@ -4,11 +4,13 @@
 # Python
 __pycache__/
 *.pyc
+.eggs/
 
 # PyInstaller artifacts
 build/
 dist/
 releases/
+py2app
 *.spec
 *.app
 *.zip
@@ -24,4 +26,5 @@ run_arm64_py2app.bash
 run_intel_py2app.bash
 setup_intel_env.txt
 icons/
+*.dmg
 
