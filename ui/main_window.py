@@ -44,6 +44,8 @@ pg.setConfigOption('background', 'w')
 pg.setConfigOption('foreground', 'k')
 pg.setConfigOption('antialias', False)
 
+GLOBAL_SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
+
 
 #---------------------------------------------------------------------        
 
@@ -1420,7 +1422,6 @@ class NMRViewerApp(QMainWindow):
         scene.contextMenuItem = self.plot_2d.getPlotItem()
         scene.showExportDialog()
         
-        # Setup a robust timer to check when the dialog is closed
         if not hasattr(self, 'export_poll_timer'):
             self.export_poll_timer = QTimer(self)
             self.export_poll_timer.timeout.connect(self._check_export_dialog_closed)
@@ -1431,12 +1432,10 @@ class NMRViewerApp(QMainWindow):
     def _check_export_dialog_closed(self):
         try:
             scene = self.plot_2d.scene()
-            # Stop the timer and restore the UI once the dialog is no longer visible
             if not hasattr(scene, 'exportDialog') or scene.exportDialog is None or not scene.exportDialog.isVisible():
                 self.export_poll_timer.stop()
                 self._restore_export_state()
         except RuntimeError:
-            # Failsafe in case the underlying C++ object is deleted abruptly
             self.export_poll_timer.stop()
             self._restore_export_state()
 
@@ -1626,7 +1625,6 @@ class NMRViewerApp(QMainWindow):
             self.plot_2d.setTitle("No peaks to renumber.")
             return
             
-        # Clear existing text items from the plot to prevent overlapping numbers
         for pid, text_item in self.peak_text_items.items():
             self.plot_2d.removeItem(text_item)
         self.peak_text_items.clear()
@@ -1668,7 +1666,7 @@ class NMRViewerApp(QMainWindow):
                 elif z_diff <= 2:
                     is_center_plane = False
                 else:
-                    is_visible = False # Exists outside the n-2 to n+2 window
+                    is_visible = False 
 
             if not is_visible:
                 continue
@@ -1700,7 +1698,6 @@ class NMRViewerApp(QMainWindow):
 
         self.peaks_scatter.setData(spots)
 
-        # Clean up deleted peaks OR peaks that have scrolled out of the visible Z-window
         ids_to_remove = set(self.peak_text_items.keys()) - current_ids
         for pid in ids_to_remove:
             self.plot_2d.removeItem(self.peak_text_items[pid])
@@ -1720,7 +1717,6 @@ class NMRViewerApp(QMainWindow):
         if vis_data is None:
             return
 
-        # --- CRITICAL FIX: Route to the new 1D slider if ndim == 1 ---
         if raw_data.ndim == 1:
             base_mult = self.spinbox_1d_base.value()
         else:
@@ -1740,7 +1736,6 @@ class NMRViewerApp(QMainWindow):
             if reply == QMessageBox.StandardButton.Yes:
                 self.peak_manager.picked_peaks.clear()
                 self.peak_manager.peak_counter = 0
-                # --- FIX: Remove leftover fit lines from the old peaks ---
                 self.clear_1d_fits()
                 
         # Run the fast NumPy scan
@@ -1771,14 +1766,15 @@ class NMRViewerApp(QMainWindow):
 #---------------------------------------------------------------------        
            
     def silent_update_check(self):
-        # Replace with your actual GitHub repository details
         repo = "21tesla/NMRdraw_lite"
         url = f"https://api.github.com/repos/{repo}/releases/latest"
         
         try:
             # GitHub's API requires a User-Agent header
             req = urllib.request.Request(url, headers={'User-Agent': 'NMRdraw_lite-App'})
-            with urllib.request.urlopen(req, timeout=3) as response:
+            
+            # Added context=GLOBAL_SSL_CONTEXT to ensure macOS can verify the SSL certificate
+            with urllib.request.urlopen(req, context=GLOBAL_SSL_CONTEXT, timeout=3) as response:
                 data = json.loads(response.read().decode())
                 
                 # GitHub tags usually have a 'v' prefix (e.g., 'v1.1.0'). Strip it for comparison.
@@ -1800,12 +1796,10 @@ class NMRViewerApp(QMainWindow):
                 )
                 if reply == QMessageBox.StandardButton.Yes:
                     webbrowser.open(release_url)
-            # Notice the lack of an 'else' block here. If they are up to date, it does nothing!
 
         except Exception:
-            # We also fail silently on network errors so it doesn't bother the user on startup
             pass 
-
+            
 #---------------------------------------------------------------------        
             
     def _check_1d_baseline_validity(self):
@@ -1882,7 +1876,6 @@ class NMRViewerApp(QMainWindow):
         
         window_pts = 15
         
-        # ... (The rest of your existing fit_1d_peaks loop stays exactly the same) ...        
         for p in self.peak_manager.picked_peaks:
             center_ppm = p['ppm_x']
             idx_center = np.argmin(np.abs(x_data - center_ppm))

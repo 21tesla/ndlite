@@ -14,7 +14,7 @@
 ```
 pip install -r requirements.txt 
 
-python main.py [file1.ft file2.ft ...]
+python NMRdraw_lite.py [file1.ft file2.ft ...]
 ```
 
 ## Example Data
@@ -22,7 +22,7 @@ The `example/` directory contains sample datasets from my laboratory.
  
 
 ## Standalone MacOS App
-Look in the **Releases** directory for standalone apps for [**Apple Silicon**](https://github.com/21tesla/NMRdraw_lite/releases) Macs.
+Look in the [**Releases**](https://github.com/21tesla/NMRdraw_lite/releases) directory for standalone apps for both Intel and Apple Silicon computers.
 
 ## Acknowledgements
 Thank you to **Dr. Frank Delagio** (IBBR / U Maryland) for the original NMRdraw that has been used for decades and **Dr. Johnthan Helmus** (www.nmrglue.com) for the nmrglue framework that powers all the visualization and reads NMR data formats. 
