@@ -22,7 +22,7 @@ The `example/` directory contains sample datasets from my laboratory.
  
 
 ## Standalone MacOS App
-Look in the **Releases** directory for standalone apps for [**Apple Silicon**](https://github.com/21tesla/NMRdraw_lite/releases/download/1.0_arm64/NMRdraw_lite_arm64.dmg) Macs.
+Look in the **Releases** directory for standalone apps for [**Apple Silicon**](https://github.com/21tesla/NMRdraw_lite/releases) Macs.
 
 ## Acknowledgements
 Thank you to **Dr. Frank Delagio** (IBBR / U Maryland) for the original NMRdraw that has been used for decades and **Dr. Johnthan Helmus** (www.nmrglue.com) for the nmrglue framework that powers all the visualization and reads NMR data formats. 
