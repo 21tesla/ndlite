@@ -19,9 +19,10 @@ from PyQt6.QtGui import QTransform, QColor, QFont, QMouseEvent, QAction, QPainte
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QHBoxLayout, QGridLayout, QPushButton, QFileDialog,
                              QLabel, QSlider, QGroupBox, QDoubleSpinBox, QSpinBox,
-                             QScrollArea, QColorDialog, QCheckBox, QMessageBox, QDialog)
-                             
-from PyQt6.QtCore import Qt, QTimer
+                             QScrollArea, QColorDialog, QCheckBox, QMessageBox, QDialog,
+                             QTableWidget, QTableWidgetItem, QHeaderView, QDialogButtonBox)
+
+from PyQt6.QtCore import Qt, QTimer, qInstallMessageHandler, QtMsgType
 
 from ui.plot_widget import TrackpadPlotWidget
 from ui.dialogs import HelpDialog
@@ -31,7 +32,7 @@ from core.peak_manager import PeakManager
 #---------------------------------------------------------------------        
 
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 
 #---------------------------------------------------------------------        
@@ -49,6 +50,104 @@ GLOBAL_SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
 
 #---------------------------------------------------------------------        
 
+
+class SettingsDialog(QDialog):
+    def __init__(self, prefs, prefs_file, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Preferences")
+        self.resize(400, 500)
+        self.prefs = prefs
+        self.prefs_file = prefs_file
+        self.flat_prefs = self.flatten_dict(self.prefs)
+        
+        self.init_ui()
+
+    def init_ui(self):
+        layout = QVBoxLayout(self)
+        
+        self.table = QTableWidget()
+        self.table.setColumnCount(2)
+        self.table.setHorizontalHeaderLabels(["Setting", "Value"])
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
+        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        
+        self.table.setRowCount(len(self.flat_prefs))
+        
+        for row, (key, value) in enumerate(self.flat_prefs.items()):
+            # Setting Name (Read-only)
+            key_item = QTableWidgetItem(key)
+            key_item.setFlags(key_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+            self.table.setItem(row, 0, key_item)
+            
+            # Setting Value (Editable)
+            val_item = QTableWidgetItem(str(value))
+            # Store the original type so we can cast it back upon saving
+            val_item.setData(Qt.ItemDataRole.UserRole, type(value).__name__)
+            self.table.setItem(row, 1, val_item)
+            
+        layout.addWidget(self.table)
+        
+        # Save / Cancel Buttons
+        self.button_box = QDialogButtonBox(QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel)
+        self.button_box.accepted.connect(self.save_settings)
+        self.button_box.rejected.connect(self.reject)
+        layout.addWidget(self.button_box)
+
+    def flatten_dict(self, d, parent_key='', sep='.'):
+        items = []
+        for k, v in d.items():
+            new_key = f"{parent_key}{sep}{k}" if parent_key else k
+            if isinstance(v, dict):
+                items.extend(self.flatten_dict(v, new_key, sep=sep).items())
+            else:
+                items.append((new_key, v))
+        return dict(items)
+
+    def unflatten_dict(self, d, sep='.'):
+        result_dict = dict()
+        for k, v in d.items():
+            parts = k.split(sep)
+            d_ref = result_dict
+            for part in parts[:-1]:
+                if part not in d_ref:
+                    d_ref[part] = dict()
+                d_ref = d_ref[part]
+            d_ref[parts[-1]] = v
+        return result_dict
+
+    def save_settings(self):
+        updated_flat = {}
+        try:
+            for row in range(self.table.rowCount()):
+                key = self.table.item(row, 0).text()
+                val_item = self.table.item(row, 1)
+                str_val = val_item.text()
+                orig_type = val_item.data(Qt.ItemDataRole.UserRole)
+                
+                # Safely cast back to the original type
+                if orig_type == 'int':
+                    updated_flat[key] = int(str_val)
+                elif orig_type == 'float':
+                    updated_flat[key] = float(str_val)
+                elif orig_type == 'bool':
+                    updated_flat[key] = str_val.lower() in ('true', '1', 'yes')
+                else:
+                    updated_flat[key] = str_val
+                    
+            nested_prefs = self.unflatten_dict(updated_flat)
+            
+            with open(self.prefs_file, 'w') as f:
+                json.dump(nested_prefs, f, indent=4)
+                
+            self.parent().prefs = nested_prefs
+            self.accept()
+            
+            QMessageBox.information(self, "Settings Saved", "Preferences saved successfully.\n\nPlease restart the application for UI changes to fully take effect.")
+            
+        except ValueError as e:
+            QMessageBox.warning(self, "Invalid Input", f"Could not save settings due to a type conversion error:\n{e}\n\nPlease ensure numbers remain as numbers.")
+            
+            
 
 class NMRViewerApp(QMainWindow):
     def __init__(self, file_paths=None):
@@ -93,7 +192,8 @@ class NMRViewerApp(QMainWindow):
         self.cont_sliders = {}
         self.cont_widgets = {}
 
-        # --- FIX: Instantiate managers BEFORE loading files ---
+        self.load_preferences()
+
         self.peak_manager = PeakManager()
         self.data_handler = DataHandler()
 
@@ -194,19 +294,26 @@ class NMRViewerApp(QMainWindow):
         self.lbl_b1d = QLabel("1D Baseline:")
         self.lbl_b1d.setMinimumWidth(120)
         
+        # Load from prefs
+        b1d_prefs = self.prefs["baseline_1d"]
+        b1d_min = b1d_prefs["min"]
+        b1d_max = b1d_prefs["max"]
+        b1d_def = b1d_prefs["default"]
+        b1d_step = b1d_prefs["step"]
+        
         self.slider_1d_base = QSlider(Qt.Orientation.Horizontal)
-        self.slider_1d_base.setMinimum(1)     # 0.01 * 100
-        self.slider_1d_base.setMaximum(5000)  # 50.0 * 100
-        self.slider_1d_base.setValue(400)     # 4.0 * 100
+        self.slider_1d_base.setMinimum(int(b1d_min * 100)) 
+        self.slider_1d_base.setMaximum(int(b1d_max * 100))  
+        self.slider_1d_base.setValue(int(b1d_def * 100))     
         
         self.spinbox_1d_base = QDoubleSpinBox()
-        self.spinbox_1d_base.setRange(0.01, 50.0)
-        self.spinbox_1d_base.setSingleStep(0.1)
+        self.spinbox_1d_base.setRange(b1d_min, b1d_max)
+        self.spinbox_1d_base.setSingleStep(b1d_step)
         self.spinbox_1d_base.setDecimals(2)
-        self.spinbox_1d_base.setValue(4.0)
+        self.spinbox_1d_base.setValue(b1d_def)
         self.spinbox_1d_base.setMinimumWidth(80)
         self.spinbox_1d_base.setKeyboardTracking(False)
-
+        
         def b1d_sl_changed(val):
             self.spinbox_1d_base.blockSignals(True)
             try:
@@ -295,12 +402,16 @@ class NMRViewerApp(QMainWindow):
         grp_cont = QGroupBox("Display Controls")
         grid_cont = QGridLayout()
 
+        # Load from prefs
+        c_prefs = self.prefs["controls"]
+        
         cont_params = [
-            ("base", "Baseline Multiplier", 0.05, 50.0, 4.0, False),
-            ("scale", "Contour Multiplier", 1.05, 2.5, 1.3, False),
-            ("count", "Number of Contours", 1, 25, 15, True),
-            ("offset", "1D Stack Offset", 0.0, 4.0, 0.0, False)
-        ]
+            ("base", c_prefs["base"]["label"], c_prefs["base"]["min"], c_prefs["base"]["max"], c_prefs["base"]["default"], c_prefs["base"]["is_int"]),
+            ("scale", c_prefs["scale"]["label"], c_prefs["scale"]["min"], c_prefs["scale"]["max"], c_prefs["scale"]["default"], c_prefs["scale"]["is_int"]),
+            ("count", c_prefs["count"]["label"], c_prefs["count"]["min"], c_prefs["count"]["max"], c_prefs["count"]["default"], c_prefs["count"]["is_int"]),
+            ("offset", c_prefs["offset"]["label"], c_prefs["offset"]["min"], c_prefs["offset"]["max"], c_prefs["offset"]["default"], c_prefs["offset"]["is_int"])
+            ]
+        
         for row, (key, label, vmin, vmax, vdef, is_int) in enumerate(cont_params):
             lbl = QLabel(label)
             sl = QSlider(Qt.Orientation.Horizontal)
@@ -1266,6 +1377,20 @@ class NMRViewerApp(QMainWindow):
 
         # --- File Menu ---
         file_menu = menubar.addMenu("File")
+        
+        load_action = QAction("Load File(s)...", self)
+        load_action.setShortcut("Ctrl+O")  # Maps to Cmd+O on macOS automatically
+        load_action.triggered.connect(self.load_file_dialog)
+        file_menu.addAction(load_action)
+
+        file_menu.addSeparator()
+        
+        settings_action = QAction("Settings...", self)
+        settings_action.triggered.connect(self.open_settings_dialog)
+        file_menu.addAction(settings_action)
+        
+        file_menu.addSeparator()
+        
         file_menu.addAction(save_peaks_action)
         
         export_menu = file_menu.addMenu("Export")
@@ -1278,7 +1403,13 @@ class NMRViewerApp(QMainWindow):
         export_peaks_action.triggered.connect(self.export_peaks_spectrum)
         export_menu.addAction(export_peaks_action)
 
+        file_menu.addSeparator()
 
+        quit_action = QAction("Quit", self)
+        quit_action.setShortcut("Ctrl+Q")
+        quit_action.triggered.connect(self.close)
+        file_menu.addAction(quit_action)
+        
         # --- 1D Mode Menu ---
         self.one_d_menu = menubar.addMenu("1D-Mode")
         
@@ -1997,4 +2128,52 @@ class NMRViewerApp(QMainWindow):
         self.baseline_anchors.clear()
         self.baseline_scatter.setData([])
         self.set_mode('baseline_interactive')
-        self.plot_2d.setTitle("Interactive Baseline: Left-click to add anchors, Right-click to exit.")                                              
+        self.plot_2d.setTitle("Interactive Baseline: Left-click to add anchors, Right-click to exit.")       
+        
+ #---------------------------------------------------------------------        
+                    
+         
+    def load_preferences(self):
+        self.prefs_file = "nmrdraw_preferences.json"
+        
+        # Define the default values
+        self.prefs = {
+            "baseline_1d": {"min": 0.01, "max": 50.0, "default": 4.0, "step": 0.1},
+            "phase_p0": {"min": -180.0, "max": 180.0, "step": 0.1},
+            "phase_p1": {"min": -360.0, "max": 360.0, "step": 0.1},
+            "controls": {
+                "base": {"label": "Baseline Multiplier", "min": 0.05, "max": 50.0, "default": 4.0, "is_int": False},
+                "scale": {"label": "Contour Multiplier", "min": 1.05, "max": 2.5, "default": 1.3, "is_int": False},
+                "count": {"label": "Number of Contours", "min": 1, "max": 25, "default": 15, "is_int": True},
+                "offset": {"label": "1D Stack Offset", "min": 0.0, "max": 4.0, "default": 0.0, "is_int": False}
+            }
+        }
+        
+        # Load existing preferences or create a new file
+        if os.path.exists(self.prefs_file):
+            try:
+                with open(self.prefs_file, 'r') as f:
+                    user_prefs = json.load(f)
+                    # Deep update for nested dictionary
+                    for key, val in user_prefs.items():
+                        if isinstance(val, dict) and key in self.prefs:
+                            self.prefs[key].update(val)
+                        else:
+                            self.prefs[key] = val
+            except Exception as e:
+                print(f"Error loading preferences: {e}. Using default values.")
+        else:
+            try:
+                with open(self.prefs_file, 'w') as f:
+                    json.dump(self.prefs, f, indent=4)
+            except Exception as e:
+                print(f"Error generating preferences file: {e}")                                               
+                
+ #---------------------------------------------------------------------        
+
+    def open_settings_dialog(self):
+        dlg = SettingsDialog(self.prefs, self.prefs_file, self)
+        dlg.exec() 
+ 
+ #---------------------------------------------------------------------        
+ 
