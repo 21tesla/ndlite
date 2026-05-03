@@ -32,7 +32,7 @@ from core.peak_manager import PeakManager
 #---------------------------------------------------------------------        
 
 
-__version__ = "0.2.1"
+__version__ = "0.2.2"
 
 
 #---------------------------------------------------------------------        
@@ -225,12 +225,6 @@ class NMRViewerApp(QMainWindow):
 
         grp_file = QGroupBox("Data")
         v_file = QVBoxLayout()
-
-        btn_load = QPushButton("Load NMRPipe File(s)")
-        btn_load.clicked.connect(self.load_file_dialog)
-        self.lbl_info = QLabel("No file loaded.")
-        v_file.addWidget(btn_load)
-        v_file.addWidget(self.lbl_info)
 
         self.file_scroll = QScrollArea()
         self.file_scroll.setWidgetResizable(True)
@@ -1028,8 +1022,6 @@ class NMRViewerApp(QMainWindow):
                     self.file_pools_2d.append([])
                     self.file_curves_1d.append(None)
 
-            self.lbl_info.setText(f"Loaded {len(file_names)} spectrum" if len(file_names) == 1 else f"Loaded {len(file_names)} spectra")
-
             # 7. Setup Navigators and Interactivity
             if ndim > 1:
                 self.h_pos = (self.lim_y[0] + self.lim_y[1]) / 2.0
@@ -1088,7 +1080,8 @@ class NMRViewerApp(QMainWindow):
                 self.plot_2d.setYRange(float(self.lim_y[0]), float(self.lim_y[1]))
 
         except Exception as e:
-            self.lbl_info.setText(f"Error loading files: {e}")
+            QMessageBox.critical(self, "Error Loading Data", f"An error occurred while loading files:\n{e}")
+            
 #---------------------------------------------------------------------        
 
     def _update_enabled_state(self):
@@ -2138,7 +2131,7 @@ class NMRViewerApp(QMainWindow):
         
         # Define the default values
         self.prefs = {
-            "baseline_1d": {"min": 0.01, "max": 50.0, "default": 4.0, "step": 0.1},
+            "baseline_1d": {"min": 0.1, "max": 100.0, "default": 5.0, "step": 0.1},
             "phase_p0": {"min": -180.0, "max": 180.0, "step": 0.1},
             "phase_p1": {"min": -360.0, "max": 360.0, "step": 0.1},
             "controls": {
