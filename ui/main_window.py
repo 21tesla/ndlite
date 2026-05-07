@@ -29,6 +29,18 @@ from ui.dialogs import HelpDialog
 from core.data_handler import DataHandler
 from core.peak_manager import PeakManager
 
+from ui.components.data_list_widget import DataListWidget
+from ui.components.phase_control_widget import PhaseControlWidget
+from ui.components.display_control_widget import DisplayControlWidget
+from ui.components.menu_builder import MenuBuilder
+from ui.controllers.fitting_controller import FittingController
+from ui.controllers.baseline_controller import BaselineController
+from ui.controllers.peak_controller import PeakController
+from ui.controllers.io_controller import IOController
+from ui.exporter import Exporter
+from core.updater import Updater
+from core.models.spectrum_model import SpectrumModel
+
 #---------------------------------------------------------------------        
 
 
@@ -192,18 +204,25 @@ class NMRViewerApp(QMainWindow):
         self.cont_sliders = {}
         self.cont_widgets = {}
 
-        self.load_preferences()
+        self.io_controller = IOController(self)
+        self.io_controller.load_preferences()
 
         self.peak_manager = PeakManager()
+        self.exporter = Exporter(self)
+        self.updater = Updater(self)
+        self.fitting_controller = FittingController(self)
+        self.baseline_controller = BaselineController(self)
+        self.peak_controller = PeakController(self)
         self.data_handler = DataHandler()
 
         self.init_ui()
-        self.create_menus()
+        self.menu_builder = MenuBuilder(self)
+        self.menu_builder.build()
         
         if file_paths:
-            self.load_files(file_paths)
+            self.io_controller.load_files(file_paths)
  
-        QTimer.singleShot(2000, self.silent_update_check)       
+        QTimer.singleShot(2000, self.updater.silent_update_check)       
         
         
 #---------------------------------------------------------------------        
@@ -223,19 +242,10 @@ class NMRViewerApp(QMainWindow):
         top_panel = QWidget()
         top_layout = QHBoxLayout(top_panel)
 
-        grp_file = QGroupBox("Data")
+        # Data List
         v_file = QVBoxLayout()
-
-        self.file_scroll = QScrollArea()
-        self.file_scroll.setWidgetResizable(True)
-        self.file_scroll.setMaximumHeight(150)
-        self.file_container = QWidget()
-        self.file_layout = QVBoxLayout(self.file_container)
-        self.file_layout.setAlignment(Qt.AlignmentFlag.AlignTop)
-        self.file_layout.setContentsMargins(2, 2, 2, 2)
-        self.file_layout.setSpacing(4)
-        self.file_scroll.setWidget(self.file_container)
-        v_file.addWidget(self.file_scroll)
+        self.data_list_widget = DataListWidget()
+        v_file.addWidget(self.data_list_widget)
 
         # Z-Plane Controls
         self.z_container = QWidget()
@@ -262,12 +272,12 @@ class NMRViewerApp(QMainWindow):
             self._update_z_label()
             self._update_enabled_state()
             self.recompute_contours()
-            self.update_peak_markers()
+            self.peak_controller.update_peak_markers()
 
         def z_sl_released():
             self._update_enabled_state()
             self.recompute_contours()
-            self.update_peak_markers()
+            self.peak_controller.update_peak_markers()
 
         self.slider_z.valueChanged.connect(z_sl_changed)
         self.spinbox_z.valueChanged.connect(z_sb_changed)
@@ -335,6 +345,7 @@ class NMRViewerApp(QMainWindow):
         v_file.addWidget(self.baseline_1d_container)
         # -----------------------------------------
 
+        grp_file = QWidget()
         grp_file.setLayout(v_file)
         top_layout.addWidget(grp_file)
         self.grp_phase = QGroupBox("Phase Correction")
@@ -683,7 +694,7 @@ class NMRViewerApp(QMainWindow):
 
                     if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
                         self.peak_manager.add_force_peak(click_ppm_x, click_ppm_y, ppm_z=current_ppm_z, closest_z_idx=current_z_idx)
-                        self.update_peak_markers()
+                        self.peak_controller.update_peak_markers()
                     else:
                         if self.enabled_indices and hasattr(self, 'vis_data_dict'):
                             orig_i = self.enabled_indices[0]
@@ -700,7 +711,7 @@ class NMRViewerApp(QMainWindow):
                                 data_to_pass, self.ppm_x, self.ppm_y, threshold,
                                 click_z_idx=current_z_idx, ppm_z=getattr(self, 'ppm_z', None)
                             )
-                            self.update_peak_markers()
+                            self.peak_controller.update_peak_markers()
 
                 elif self.current_mode == 'peak_delete':
                     x_range, y_range = view_box.viewRange()
@@ -708,7 +719,7 @@ class NMRViewerApp(QMainWindow):
                     dy_scale = max(abs(y_range[1] - y_range[0]), 1e-6)
                             
                     self.peak_manager.delete_nearest_peak(click_ppm_x, click_ppm_y, dx_scale, dy_scale)
-                    self.update_peak_markers()
+                    self.peak_controller.update_peak_markers()
                     
                 elif self.current_mode == 'baseline_interactive':
                     orig_i = self.enabled_indices[0]
@@ -729,7 +740,7 @@ class NMRViewerApp(QMainWindow):
             
         # Add Shift-R for sequential renumbering
         if event.key() == Qt.Key.Key_R and (event.modifiers() & Qt.KeyboardModifier.ShiftModifier):
-            self.renumber_peaks()
+            self.peak_controller.renumber_peaks()
             return
             
         if event.key() in (Qt.Key.Key_Enter, Qt.Key.Key_Return):
@@ -772,7 +783,7 @@ class NMRViewerApp(QMainWindow):
             return
 
         if text == 's':
-            self.save_peaks()
+            self.peak_controller.save_peaks()
             return
 
         if text == 'p':
@@ -783,7 +794,7 @@ class NMRViewerApp(QMainWindow):
                     
                     # Delegate to manager
                     self.peak_manager.add_force_peak(self.v_pos, self.h_pos)
-                    self.update_peak_markers()
+                    self.peak_controller.update_peak_markers()
             else:
                 self.set_mode('peak_pick')
             return
@@ -808,282 +819,6 @@ class NMRViewerApp(QMainWindow):
 
 #---------------------------------------------------------------------        
                             
-    def load_file_dialog(self):
-        file_names, _ = QFileDialog.getOpenFileNames(self, "Open NMRPipe File(s)", "", "NMRPipe (*.ft *.ft1 *.ft2 *.ft3)")
-        if file_names:
-            self.load_files(file_names)
-
-#---------------------------------------------------------------------        
-
-    def load_files(self, file_names):
-        if not file_names:
-            return
-            
-        # 1. Clear existing items from the plot
-        if hasattr(self, 'file_groups'):
-            for g in self.file_groups:
-                if g is not None: self.plot_2d.removeItem(g)
-        if hasattr(self, 'file_curves_1d'):
-            for c in self.file_curves_1d:
-                if c is not None: self.plot_2d.removeItem(c)
-
-        self.file_groups = []
-        self.file_pools_2d = []
-        self.file_curves_1d = []
-        self.dic_list = []
-        self.raw_data_list = []
-        self.spectrum_colors = []
-        self.file_enabled_flags = [True] * len(file_names)
-        self.baseline_corrections = [None] * len(file_names) 
-
-        # Clear the UI layout
-        for i in reversed(range(self.file_layout.count())):
-            widget = self.file_layout.itemAt(i).widget()
-            if widget:
-                widget.deleteLater()
-
-        default_colors = [
-            ('#0000FF', '#FF0000'),
-            ('#008000', '#FF00FF'),
-            ('#00FFFF', '#FFA500'),
-            ('#800080', '#FFFF00'),
-            ('#000000', '#888888')
-        ]
-
-        small_font = QFont()
-        small_font.setPointSize(9)
-
-        try:
-            # 2. Load Data and Build File Rows
-            for i, file_name in enumerate(file_names):
-                dic, data = self.data_handler.load_file(file_name)
-                self.dic_list.append(dic)
-                self.raw_data_list.append(data)
-                
-                c_pos, c_neg = default_colors[i % len(default_colors)]
-                self.spectrum_colors.append([c_pos, c_neg])
-
-                row_widget = QWidget()
-                row_widget.setMaximumHeight(18)
-                row_layout = QHBoxLayout(row_widget)
-                row_layout.setContentsMargins(0, 0, 0, 0)
-                row_layout.setSpacing(8)
-
-                chk_box = QCheckBox()
-                chk_box.setChecked(True)
-                chk_box.stateChanged.connect(lambda state, idx=i: self.on_file_toggled(idx, bool(state)))
-
-                lbl = QLabel(os.path.basename(file_name))
-                lbl.setFont(small_font)
-
-                btn_pos = QPushButton()
-                btn_pos.setFixedSize(14, 14)
-                btn_pos.setToolTip("Positive / 1D Trace Color")
-                btn_pos.setStyleSheet(f"background-color: {c_pos}; border: 1px solid #aaa;")
-
-                btn_neg = QPushButton()
-                btn_neg.setFixedSize(14, 14)
-                btn_neg.setToolTip("Negative Contour Color")
-                btn_neg.setStyleSheet(f"background-color: {c_neg}; border: 1px solid #aaa;")
-
-                def make_color_callback(idx, is_pos, btn):
-                    def callback():
-                        curr_color = self.spectrum_colors[idx][0 if is_pos else 1]
-                        color = QColorDialog.getColor(initial=QColor(curr_color), parent=self, title="Select Color")
-                        if color.isValid():
-                            hex_color = color.name()
-                            self.spectrum_colors[idx][0 if is_pos else 1] = hex_color
-                            btn.setStyleSheet(f"background-color: {hex_color}; border: 1px solid #aaa;")
-                            self.recompute_contours()
-                    return callback
-
-                btn_pos.clicked.connect(make_color_callback(i, True, btn_pos))
-                btn_neg.clicked.connect(make_color_callback(i, False, btn_neg))
-
-                row_layout.addWidget(chk_box)
-                row_layout.addWidget(lbl)
-                row_layout.addStretch()
-                row_layout.addWidget(btn_pos)
-                if data.ndim == 1:
-                    btn_neg.hide()
-                else:
-                    row_layout.addWidget(btn_neg)
-
-                self.file_layout.addWidget(row_widget)
-
-            # 3. Configure Dimensionality State
-            self.dic = self.dic_list[0]
-            self.raw_data = self.raw_data_list[0]
-            ndim = self.raw_data.ndim
-            order = self.dic.get('FDDIMORDER', [2, 1, 3, 4])
-            is_1d = (ndim == 1)
-
-            # 4. Toggle UI Components
-            for key in ['base', 'scale', 'count']:
-                lbl, sl, sb = self.cont_widgets[key]
-                lbl.setEnabled(not is_1d)
-                sl.setEnabled(not is_1d)
-                sb.setEnabled(not is_1d)
-
-            lbl, sl, sb = self.cont_widgets['offset']
-            lbl.setEnabled(is_1d)
-            sl.setEnabled(is_1d)
-            sb.setEnabled(is_1d)
-
-            # --- FIX: Completely hide irrelevant menus for a cleaner macOS native experience ---
-            if hasattr(self, 'one_d_menu') and hasattr(self, 'two_d_menu'):
-                self.one_d_menu.menuAction().setVisible(is_1d)
-                self.two_d_menu.menuAction().setVisible(not is_1d)
-            # -----------------------------------------------------------------------------------
-
-            self.baseline_1d_container.setVisible(is_1d)
-
-            # 5. Extract Coordinates
-            if ndim == 1:
-                orig_dim_x = int(order[0]) if len(order) > 0 else 2
-                self.label_x = self.dic.get(f'FDF{orig_dim_x}LABEL', '1H')
-                self.label_y = "Intensity"
-                self.label_z = None
-
-                uc_x = ng.pipe.make_uc(self.dic, self.raw_data, dim=0)
-                self.ppm_x, self.lim_x = uc_x.ppm_scale(), uc_x.ppm_limits()
-                self.ppm_y, self.lim_y = None, None
-                
-                self.x_dim, self.y_dim, self.z_dim = 0, None, None
-                self.nz = 1
-                self.slice_x_idx = 0
-
-                self.plot_2d.setLabel('bottom', self.label_x, units="ppm")
-                self.plot_2d.setLabel('left', self.label_y, units="")
-                self.plot_2d.getViewBox().invertY(False)
-
-            elif ndim == 3:
-                self.z_dim, self.y_dim, self.x_dim = 0, 1, 2
-
-                orig_dim_x = int(order[0]) if len(order) > 0 else 2
-                orig_dim_y = int(order[1]) if len(order) > 1 else 3
-                orig_dim_z = int(order[2]) if len(order) > 2 else 1
-
-                self.label_x = self.dic.get(f'FDF{orig_dim_x}LABEL', 'X')
-                self.label_y = self.dic.get(f'FDF{orig_dim_y}LABEL', 'Y')
-                self.label_z = self.dic.get(f'FDF{orig_dim_z}LABEL', 'Z')
-
-                uc_z = ng.pipe.make_uc(self.dic, self.raw_data, dim=self.z_dim)
-                uc_y = ng.pipe.make_uc(self.dic, self.raw_data, dim=self.y_dim)
-                uc_x = ng.pipe.make_uc(self.dic, self.raw_data, dim=self.x_dim)
-
-                self.ppm_z, self.lim_z = uc_z.ppm_scale(), uc_z.ppm_limits()
-                self.ppm_y, self.lim_y = uc_y.ppm_scale(), uc_y.ppm_limits()
-                self.ppm_x, self.lim_x = uc_x.ppm_scale(), uc_x.ppm_limits()
-                self.nz = self.raw_data.shape[self.z_dim]
-
-                self.plot_2d.setLabel('bottom', self.label_x, units="ppm")
-                self.plot_2d.setLabel('left', self.label_y, units="ppm")
-                self.plot_2d.getViewBox().invertY(True)
-
-            else:
-                self.y_dim, self.x_dim = 0, 1
-
-                orig_dim_x = int(order[0]) if len(order) > 0 else 2
-                orig_dim_y = int(order[1]) if len(order) > 1 else 1
-
-                self.label_x = self.dic.get(f'FDF{orig_dim_x}LABEL', 'X')
-                self.label_y = self.dic.get(f'FDF{orig_dim_y}LABEL', 'Y')
-
-                uc_plot_y = ng.pipe.make_uc(self.dic, self.raw_data, dim=self.y_dim)
-                uc_plot_x = ng.pipe.make_uc(self.dic, self.raw_data, dim=self.x_dim)
-
-                self.z_dim = None
-                self.label_z = None
-                self.nz = 1
-                self.ppm_x, self.lim_x = uc_plot_x.ppm_scale(), uc_plot_x.ppm_limits()
-                self.ppm_y, self.lim_y = uc_plot_y.ppm_scale(), uc_plot_y.ppm_limits()
-
-                self.plot_2d.setLabel('bottom', self.label_x, units="ppm")
-                self.plot_2d.setLabel('left', self.label_y, units="ppm")
-                self.plot_2d.getViewBox().invertY(True)
-
-            if ndim > 1:
-                self.slice_x_idx = 1
-                
-            # 6. Initialize Plot Items
-            for idx in range(len(file_names)):
-                if is_1d:
-                    c_pos, _ = self.spectrum_colors[idx]
-                    curve = pg.PlotDataItem(pen=pg.mkPen(c_pos, width=1))
-                    self.plot_2d.addItem(curve)
-                    self.file_curves_1d.append(curve)
-                    self.file_groups.append(None)
-                    self.file_pools_2d.append(None)
-                else:
-                    group = pg.ItemGroup()
-                    self.plot_2d.addItem(group)
-                    self.file_groups.append(group)
-                    self.file_pools_2d.append([])
-                    self.file_curves_1d.append(None)
-
-            # 7. Setup Navigators and Interactivity
-            if ndim > 1:
-                self.h_pos = (self.lim_y[0] + self.lim_y[1]) / 2.0
-                self.v_pos = (self.lim_x[0] + self.lim_x[1]) / 2.0
-                self.hline.setPos(self.h_pos)
-                self.vline.setPos(self.v_pos)
-
-            if self.nz > 1:
-                self.slider_z.blockSignals(True)
-                self.spinbox_z.blockSignals(True)
-                
-                self.slider_z.setMinimum(1)
-                self.slider_z.setMaximum(self.nz)
-                self.spinbox_z.setRange(1, self.nz)
-                self.spinbox_z.setSingleStep(1)
-                
-                init_val = (self.nz // 2) + 1
-                self.slider_z.setValue(init_val)
-                self.spinbox_z.setValue(init_val)
-                
-                self.slider_z.blockSignals(False)
-                self.spinbox_z.blockSignals(False)
-                
-                self.z_container.show()
-                self._update_z_label()
-            else:
-                self.z_container.hide()
-
-            # 8. Reset States
-            self.trace_curve.setData([], [])
-            if hasattr(self, 'baseline_anchors'):
-                self.baseline_anchors.clear()
-                self.baseline_scatter.setData([])
-
-            self.phase_state = {
-                'x': {'p0': 0.0, 'p1': 0.0},
-                'y': {'p0': 0.0, 'p1': 0.0},
-                'z': {'p0': 0.0, 'p1': 0.0}
-            }
-            if hasattr(self, 'active_axis') and self.active_axis:
-                self.update_phase_ui_from_state()
-
-            self._update_enabled_state()
-            self.recompute_contours()
-            self.set_mode(None)
-
-            # 9. Explicit Mathematical Scaling
-            if ndim == 1:
-                self.plot_2d.setXRange(float(self.lim_x[0]), float(self.lim_x[1]))
-                y_min = float(np.min(self.raw_data))
-                y_max = float(np.max(self.raw_data))
-                y_pad = abs(y_max - y_min) * 0.05 if y_max != y_min else 1.0
-                self.plot_2d.setYRange(y_min - y_pad, y_max + y_pad)
-            else:
-                self.plot_2d.setXRange(float(self.lim_x[0]), float(self.lim_x[1]))
-                self.plot_2d.setYRange(float(self.lim_y[0]), float(self.lim_y[1]))
-
-        except Exception as e:
-            QMessageBox.critical(self, "Error Loading Data", f"An error occurred while loading files:\n{e}")
-            
-#---------------------------------------------------------------------        
-
     def _update_enabled_state(self):
         if not self.raw_data_list:
             return
@@ -1334,839 +1069,3 @@ class NMRViewerApp(QMainWindow):
         self.update_live_trace()
          
 #---------------------------------------------------------------------        
-    def create_menus(self):
-        menubar = self.menuBar()
-        # Ensures the menu is rendered in the macOS top system menubar
-        menubar.setNativeMenuBar(True) 
-
-        # ==========================================
-        # 1. CREATE SHARED ACTIONS (Instantiate Once)
-        # ==========================================
-        save_peaks_action = QAction("Save Peaks", self)
-        save_peaks_action.setShortcut("s")
-        save_peaks_action.triggered.connect(self.save_peaks)
-
-        auto_pick_action = QAction("Auto Pick", self)
-        auto_pick_action.triggered.connect(self.auto_pick)
-
-        show_peaks_action = QAction("Show Peaks", self)
-        show_peaks_action.setShortcut("Shift+S")
-        show_peaks_action.triggered.connect(self.show_peaks)
-        
-        hide_peaks_action = QAction("Hide Peaks", self)
-        hide_peaks_action.setShortcut("Shift+H")
-        hide_peaks_action.triggered.connect(self.hide_peaks)
-
-        clear_peaks_action = QAction("Clear All Peaks", self)
-        clear_peaks_action.triggered.connect(self.clear_peaks)
-         
-        renumber_peaks_action = QAction("Renumber Peaks", self)
-        renumber_peaks_action.setShortcut("Shift+R")
-        renumber_peaks_action.triggered.connect(self.renumber_peaks)
-
-        # ==========================================
-        # 2. BUILD MENUS
-        # ==========================================
-
-        # --- File Menu ---
-        file_menu = menubar.addMenu("File")
-        
-        load_action = QAction("Load File(s)...", self)
-        load_action.setShortcut("Ctrl+O")  # Maps to Cmd+O on macOS automatically
-        load_action.triggered.connect(self.load_file_dialog)
-        file_menu.addAction(load_action)
-
-        file_menu.addSeparator()
-        
-        settings_action = QAction("Settings...", self)
-        settings_action.triggered.connect(self.open_settings_dialog)
-        file_menu.addAction(settings_action)
-        
-        file_menu.addSeparator()
-        
-        file_menu.addAction(save_peaks_action)
-        
-        export_menu = file_menu.addMenu("Export")
-        
-        export_spectrum_action = QAction("Spectrum", self)
-        export_spectrum_action.triggered.connect(self.export_spectrum)
-        export_menu.addAction(export_spectrum_action)
-        
-        export_peaks_action = QAction("Peaks + Spectrum", self)
-        export_peaks_action.triggered.connect(self.export_peaks_spectrum)
-        export_menu.addAction(export_peaks_action)
-
-        file_menu.addSeparator()
-
-        quit_action = QAction("Quit", self)
-        quit_action.setShortcut("Ctrl+Q")
-        quit_action.triggered.connect(self.close)
-        file_menu.addAction(quit_action)
-        
-        # --- 1D Mode Menu ---
-        self.one_d_menu = menubar.addMenu("1D-Mode")
-        
-        # 1. Baseline Sub-menu
-        baseline_menu = self.one_d_menu.addMenu("Baseline")
-        
-        als_action = QAction("Auto-Correct Baseline (ALS)", self)
-        als_action.triggered.connect(self.run_als_baseline)
-        baseline_menu.addAction(als_action)
-        
-        interactive_base_action = QAction("Interactive Anchors", self)
-        interactive_base_action.triggered.connect(self.start_interactive_baseline)
-        baseline_menu.addAction(interactive_base_action)
-        
-        clear_base_action = QAction("Clear Baseline", self)
-        clear_base_action.triggered.connect(self.clear_baseline)
-        baseline_menu.addAction(clear_base_action)        
-
-        self.one_d_menu.addSeparator()
-
-        # 2. Auto Pick 
-        self.one_d_menu.addAction(auto_pick_action)
-
-        self.one_d_menu.addSeparator()
-
-        # 3. Peak Functions Sub-menu
-        peak_funcs_menu = self.one_d_menu.addMenu("Peak functions")
-        peak_funcs_menu.addAction(show_peaks_action)
-        peak_funcs_menu.addAction(hide_peaks_action)
-        peak_funcs_menu.addAction(clear_peaks_action)
-        peak_funcs_menu.addAction(renumber_peaks_action)
-
-        self.one_d_menu.addSeparator()
-
-        # 4. Fitting Sub-menu
-        fit_menu = self.one_d_menu.addMenu("Fitting")
-        
-        fit_lor_action = QAction("Lorentzian", self)
-        fit_lor_action.triggered.connect(lambda: self.fit_1d_peaks('lorentzian'))
-        fit_menu.addAction(fit_lor_action)
-        
-        fit_gau_action = QAction("Gaussian", self)
-        fit_gau_action.triggered.connect(lambda: self.fit_1d_peaks('gaussian'))
-        fit_menu.addAction(fit_gau_action)
-        
-        fit_pvo_action = QAction("Pseudo-Voigt", self)
-        fit_pvo_action.triggered.connect(lambda: self.fit_1d_peaks('pseudo_voigt'))
-        fit_menu.addAction(fit_pvo_action)
-
-        fit_menu.addSeparator()
-
-        clear_fits_action = QAction("Clear Fits", self)
-        clear_fits_action.triggered.connect(self.clear_1d_fits)
-        fit_menu.addAction(clear_fits_action)
-
-        self.one_d_menu.addSeparator()
-
-        # 5. Save Peaks
-        self.one_d_menu.addAction(save_peaks_action)
-
-
-        # --- 2D/3D-Peaks Menu ---
-        self.two_d_menu = menubar.addMenu("2D/3D-Mode")
-        
-        # Add shared peak actions to the 2D/3D menu
-        self.two_d_menu.addAction(auto_pick_action)
-        
-        pick_peaks_action = QAction("Pick Peaks", self)
-        pick_peaks_action.setShortcut("p")
-        pick_peaks_action.triggered.connect(lambda: self.set_mode('peak_pick'))
-        self.two_d_menu.addAction(pick_peaks_action)
-        
-        force_pick_action = QAction("Force Pick", self)
-        force_pick_action.setShortcut("Shift+P")
-        force_pick_action.triggered.connect(self.force_pick)
-        self.two_d_menu.addAction(force_pick_action)
-
-        self.two_d_menu.addAction(show_peaks_action)
-        self.two_d_menu.addAction(hide_peaks_action)
-        
-        delete_peaks_action = QAction("Delete Peaks", self)
-        delete_peaks_action.setShortcut("d")
-        delete_peaks_action.triggered.connect(lambda: self.set_mode('peak_delete'))
-        self.two_d_menu.addAction(delete_peaks_action)
-        
-        self.two_d_menu.addAction(clear_peaks_action)
-        self.two_d_menu.addAction(renumber_peaks_action)
-        self.two_d_menu.addAction(save_peaks_action)
-                
- 
-        # --- Extras Menu ---
-        extras_menu = menubar.addMenu("Extras")
-        
-        update_action = QAction("Check for Updates...", self)
-        update_action.triggered.connect(self.check_for_updates)
-        extras_menu.addAction(update_action)
-        
-        help_action = QAction("Help", self)
-        help_action.setShortcut("h")
-        help_action.triggered.connect(self.show_help_dialog)
-        extras_menu.addAction(help_action)
-        
-#---------------------------------------------------------------------        
-                
-    def export_spectrum(self):
-        self._export_with_mode('spectrum')
-
-#---------------------------------------------------------------------        
-
-    def export_peaks_spectrum(self):
-        self._export_with_mode('peaks')
-
-#---------------------------------------------------------------------        
-
-    def _export_with_mode(self, mode):
-        self.is_exporting = True
-        
-        # Store current visibility states so we can restore them exactly
-        self._export_state = {
-            'hline': self.hline.isVisible(),
-            'vline': self.vline.isVisible(),
-            'trace': self.trace_curve.isVisible(),
-            'scatter': self.peaks_scatter.isVisible(),
-            'texts': {pid: item.isVisible() for pid, item in self.peak_text_items.items()}
-        }
-        
-        # Hide crosshairs, live trace, and the plot title
-        self.hline.setVisible(False)
-        self.vline.setVisible(False)
-        self.trace_curve.setVisible(False)
-        self.plot_2d.setTitle(" ")
-        
-        # Toggle peaks based on the selected menu option
-        if mode == 'spectrum':
-            self.hide_peaks()
-        elif mode == 'peaks':
-            self.show_peaks()
-                
-        # Trigger export dialog
-        scene = self.plot_2d.scene()
-        scene.contextMenuItem = self.plot_2d.getPlotItem()
-        scene.showExportDialog()
-        
-        if not hasattr(self, 'export_poll_timer'):
-            self.export_poll_timer = QTimer(self)
-            self.export_poll_timer.timeout.connect(self._check_export_dialog_closed)
-        self.export_poll_timer.start(200)
-
-#---------------------------------------------------------------------        
-
-    def _check_export_dialog_closed(self):
-        try:
-            scene = self.plot_2d.scene()
-            if not hasattr(scene, 'exportDialog') or scene.exportDialog is None or not scene.exportDialog.isVisible():
-                self.export_poll_timer.stop()
-                self._restore_export_state()
-        except RuntimeError:
-            self.export_poll_timer.stop()
-            self._restore_export_state()
-
-#---------------------------------------------------------------------        
-
-    def _restore_export_state(self):
-        self.is_exporting = False
-        
-        # Restore the exact visibility states from before the export
-        if hasattr(self, '_export_state'):
-            self.hline.setVisible(self._export_state.get('hline', False))
-            self.vline.setVisible(self._export_state.get('vline', False))
-            self.trace_curve.setVisible(self._export_state.get('trace', False))
-            self.peaks_scatter.setVisible(self._export_state.get('scatter', True))
-            
-            for pid, item in self.peak_text_items.items():
-                if pid in self._export_state['texts']:
-                    item.setVisible(self._export_state['texts'][pid])
-                
-        # Trigger set_mode to safely restore the proper plot title
-        self.set_mode(self.current_mode)
-        
- #---------------------------------------------------------------------        
-                                  
-    def check_for_updates(self):
-        # Replace with your actual GitHub repository details
-        repo = "21tesla/NMRdraw_lite"
-        url = f"https://api.github.com/repos/{repo}/releases/latest"
-        
-        try:
-            # Create a context that uses certifi's updated certificates
-            context = ssl.create_default_context(cafile=certifi.where())
-        
-            req = Request(url, headers={'User-Agent': 'NMRdraw_lite-Updater'})
-            with urlopen(req, context=context) as response:
-
-                data = json.loads(response.read().decode())
-                
-                # GitHub tags usually have a 'v' prefix (e.g., 'v1.1.0'). Strip it for comparison.
-                latest_version = data['tag_name'].lstrip('v')
-                release_url = data['html_url']
-
-            # Helper function to convert "1.2.0" into a tuple of integers (1, 2, 0) for accurate math comparison
-            def parse_version(v_string):
-                return tuple(map(int, (v_string.split("."))))
-
-            if parse_version(latest_version) > parse_version(__version__):
-                reply = QMessageBox.question(
-                    self, 
-                    "Update Available",
-                    f"A new version of NMRdraw_lite ({latest_version}) is available!\n"
-                    f"You are currently running version {__version__}.\n\n"
-                    f"Would you like to open your browser to download it?",
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-                )
-                if reply == QMessageBox.StandardButton.Yes:
-                    webbrowser.open(release_url)
-            else:
-                QMessageBox.information(self, "Up to Date", f"You are running the latest version ({__version__}).")
-
-        except Exception as e:
-            QMessageBox.warning(self, "Update Check Failed", f"Could not check GitHub for updates.\nError: {e}")
-
-#---------------------------------------------------------------------        
-
-    def save_peaks(self):
-        if not self.peak_manager.picked_peaks:
-            self.plot_2d.setTitle("No peaks to save.")
-            return
-            
-        file_path, _ = QFileDialog.getSaveFileName(
-            self, "Save Peaks", "peaks.txt", "Text Files (*.txt);;All Files (*)"
-        )
-        
-        if file_path:
-            try:
-                ndim = self.raw_data.ndim if self.raw_data is not None else 0
-                
-                def calc_pt(ppm_val, ppm_array):
-                    if ppm_array is None or len(ppm_array) <= 1: return 0.0
-                    return (ppm_val - ppm_array[0]) / (ppm_array[-1] - ppm_array[0]) * (len(ppm_array) - 1)
-
-                def calc_volume(px, py, pz=None):
-                    if self.raw_data is None: return 0.0
-                    
-                    x_idx = np.argmin(np.abs(self.ppm_x - px))
-                    y_idx = np.argmin(np.abs(self.ppm_y - py)) if self.ppm_y is not None else 0
-                    
-                    wx, wy, wz = 5, 5, 2  # Integration window (matches refine_peak)
-                    
-                    start_x = max(0, x_idx - wx)
-                    end_x = min(self.raw_data.shape[-1], x_idx + wx + 1)
-                    
-                    if ndim == 1:
-                        return float(np.sum(self.raw_data[start_x:end_x]))
-                    elif ndim == 2:
-                        start_y = max(0, y_idx - wy)
-                        end_y = min(self.raw_data.shape[0], y_idx + wy + 1)
-                        return float(np.sum(self.raw_data[start_y:end_y, start_x:end_x]))
-                    elif ndim >= 3:
-                        if pz is None or self.ppm_z is None: return 0.0
-                        z_idx = np.argmin(np.abs(self.ppm_z - pz))
-                        start_y = max(0, y_idx - wy)
-                        end_y = min(self.raw_data.shape[1], y_idx + wy + 1)
-                        start_z = max(0, z_idx - wz)
-                        end_z = min(self.raw_data.shape[0], z_idx + wz + 1)
-                        return float(np.sum(self.raw_data[start_z:end_z, start_y:end_y, start_x:end_x]))
-                    return 0.0
-
-                with open(file_path, "w") as f:
-                    if ndim == 1:
-                        # Check if the first peak has been fitted
-                        has_fits = 'fit_area' in self.peak_manager.picked_peaks[0] if self.peak_manager.picked_peaks else False
-                        
-                        if has_fits:
-                            f.write(f"Index\t{self.label_x}_ppm\t{self.label_x}_pt\tFit_Type\tLinewidth\tArea_Integral\n")
-                            for p in self.peak_manager.picked_peaks:
-                                pt_x = calc_pt(p['ppm_x'], self.ppm_x)
-                                f.write(f"{p['id']}\t{p['ppm_x']:.5f}\t{pt_x:.5f}\t{p.get('fit_type', 'none')}\t{abs(p.get('fit_wid', 0.0)):.5e}\t{p.get('fit_area', 0.0):.5e}\n")
-                        else:
-                            f.write(f"Index\t{self.label_x}_ppm\t{self.label_x}_pt\tVolume_Sum\n")
-                            for p in self.peak_manager.picked_peaks:
-                                pt_x = calc_pt(p['ppm_x'], self.ppm_x)
-                                vol = calc_volume(p['ppm_x'], p['ppm_y'])
-                                f.write(f"{p['id']}\t{p['ppm_x']:.5f}\t{pt_x:.5f}\t{vol:.5e}\n")
-                                                            
-                    elif ndim == 2:
-                        f.write(f"Index\t{self.label_x}_ppm\t{self.label_y}_ppm\t{self.label_x}_pt\t{self.label_y}_pt\tVolume\n")
-                        for p in self.peak_manager.picked_peaks:
-                            pt_x = calc_pt(p['ppm_x'], self.ppm_x)
-                            pt_y = calc_pt(p['ppm_y'], self.ppm_y)
-                            vol = calc_volume(p['ppm_x'], p['ppm_y'])
-                            f.write(f"{p['id']}\t{p['ppm_x']:.5f}\t{p['ppm_y']:.5f}\t{pt_x:.5f}\t{pt_y:.5f}\t{vol:.5e}\n")
-                            
-                    elif ndim >= 3:
-                        lbl_z = self.label_z if self.label_z else "Z"
-                        f.write(f"Index\t{self.label_x}_ppm\t{self.label_y}_ppm\t{lbl_z}_ppm\t{self.label_x}_pt\t{self.label_y}_pt\t{lbl_z}_pt\tVolume\n")
-                        for p in self.peak_manager.picked_peaks:
-                            pt_x = calc_pt(p['ppm_x'], self.ppm_x)
-                            pt_y = calc_pt(p['ppm_y'], self.ppm_y)
-                            ppm_z_val = p.get('ppm_z', 0.0)
-                            pt_z = calc_pt(ppm_z_val, self.ppm_z) if self.ppm_z is not None else 0.0
-                            vol = calc_volume(p['ppm_x'], p['ppm_y'], ppm_z_val)
-                            f.write(f"{p['id']}\t{p['ppm_x']:.5f}\t{p['ppm_y']:.5f}\t{ppm_z_val:.5f}\t{pt_x:.5f}\t{pt_y:.5f}\t{pt_z:.5f}\t{vol:.5e}\n")
-
-                self.plot_2d.setTitle(f"Success: Picked peaks saved to {os.path.basename(file_path)}")
-            except Exception as e:
-                self.plot_2d.setTitle(f"Error saving peaks: {e}")
-                
-                
-#---------------------------------------------------------------------        
-                
-    def show_peaks(self):
-        self.peaks_scatter.setVisible(True)
-        for item in self.peak_text_items.values():
-            item.setVisible(True)
-
-#---------------------------------------------------------------------        
-
-    def hide_peaks(self):
-        self.peaks_scatter.setVisible(False)
-        for item in self.peak_text_items.values():
-            item.setVisible(False)
-
-#---------------------------------------------------------------------        
-
-    def force_pick(self):
-        if self.raw_data is not None:
-            if self.raw_data.ndim < 2:
-                QMessageBox.information(self, "Feature in Progress", "Force Picking is only supported for 2D and 3D spectra.")
-                return
-
-            if self.current_mode != 'peak_pick':
-                self.set_mode('peak_pick')
-
-            current_z_idx = self.slider_z.value() - 1 if self.nz > 1 else None
-            current_ppm_z = self.ppm_z[current_z_idx] if self.nz > 1 else None
-
-            self.peak_manager.add_force_peak(self.v_pos, self.h_pos, ppm_z=current_ppm_z, closest_z_idx=current_z_idx)
-            self.update_peak_markers()
-        
-#---------------------------------------------------------------------        
-            
-    def renumber_peaks(self):
-        # Look at the manager's list!
-        if not self.peak_manager.picked_peaks:
-            self.plot_2d.setTitle("No peaks to renumber.")
-            return
-            
-        for pid, text_item in self.peak_text_items.items():
-            self.plot_2d.removeItem(text_item)
-        self.peak_text_items.clear()
-        
-        # Tell the manager to do the math
-        self.peak_manager.renumber_peaks()
-        
-        # Redraw markers with the newly assigned IDs
-        self.update_peak_markers()
-        self.plot_2d.setTitle("Success: Peaks renumbered sequentially.")
-        
-#---------------------------------------------------------------------        
-
-    def update_peak_markers(self):
-        spots = []
-        current_ids = set()
-        peaks = self.peak_manager.picked_peaks 
-        current_z_idx = self.slider_z.value() - 1 if self.nz > 1 else None
-
-        # Create custom symbol: Open circle with an 'X' cross through it
-        cross_circle = QPainterPath()
-        cross_circle.addEllipse(-0.5, -0.5, 1.0, 1.0)
-        cross_circle.moveTo(-0.5, -0.5)
-        cross_circle.lineTo(0.5, 0.5)
-        cross_circle.moveTo(-0.5, 0.5)
-        cross_circle.lineTo(0.5, -0.5)
-        
-        for p in peaks:
-            pid = p['id']
-
-            # 3D Visibility Logic
-            is_center_plane = True
-            is_visible = True
-            
-            if self.nz > 1 and p.get('closest_z') is not None:
-                z_diff = abs(p['closest_z'] - current_z_idx)
-                if z_diff == 0:
-                    is_center_plane = True
-                elif z_diff <= 2:
-                    is_center_plane = False
-                else:
-                    is_visible = False 
-
-            if not is_visible:
-                continue
-
-            current_ids.add(pid)
-
-            if is_center_plane:
-                spots.append({
-                    'pos': (p['ppm_x'], p['ppm_y']), 
-                    'data': pid,
-                    'brush': pg.mkBrush(255, 0, 0, 150),  # Solid red
-                    'pen': pg.mkPen('k'),
-                    'symbol': 'o'
-                })
-            else:
-                spots.append({
-                    'pos': (p['ppm_x'], p['ppm_y']), 
-                    'data': pid,
-                    'brush': pg.mkBrush(0, 0, 0, 0),      # Transparent
-                    'pen': pg.mkPen(255, 0, 0, 150, width=1.5),
-                    'symbol': cross_circle
-                })
-
-            if pid not in self.peak_text_items:
-                text_item = pg.TextItem(text=str(pid), color=(0, 0, 0), anchor=(-0.2, 0.5)) 
-                text_item.setPos(p['ppm_x'], p['ppm_y'])
-                self.plot_2d.addItem(text_item)
-                self.peak_text_items[pid] = text_item
-
-        self.peaks_scatter.setData(spots)
-
-        ids_to_remove = set(self.peak_text_items.keys()) - current_ids
-        for pid in ids_to_remove:
-            self.plot_2d.removeItem(self.peak_text_items[pid])
-            del self.peak_text_items[pid]            
-            
-#---------------------------------------------------------------------        
-
-    def auto_pick(self):
-        if not self.enabled_indices or not hasattr(self, 'vis_data_dict'):
-            QMessageBox.warning(self, "No Data", "Please load a spectrum before auto-picking.")
-            return
-            
-        orig_i = self.enabled_indices[0]
-        vis_data = self.vis_data_dict.get(orig_i)
-        raw_data = self.raw_data_list[orig_i]
-                
-        if vis_data is None:
-            return
-
-        if raw_data.ndim == 1:
-            base_mult = self.spinbox_1d_base.value()
-        else:
-            base_mult = self.cont_sliders['base'].value()
-            
-        noise_rmsd = self.data_handler.calculate_rmsd(vis_data)
-        
-        # Matches the 1.5x strictness modifier used for the red line
-        threshold = noise_rmsd * base_mult * 1.5
-        
-        if self.peak_manager.picked_peaks:
-            reply = QMessageBox.question(
-                self, "Clear existing peaks?", 
-                "Do you want to clear your current peak list before auto-picking?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-            )
-            if reply == QMessageBox.StandardButton.Yes:
-                self.peak_manager.picked_peaks.clear()
-                self.peak_manager.peak_counter = 0
-                self.clear_1d_fits()
-                
-        # Run the fast NumPy scan
-        if raw_data.ndim == 3:
-            self.peak_manager.auto_pick(raw_data, self.ppm_x, self.ppm_y, threshold, ppm_z=getattr(self, 'ppm_z', None))
-        else:
-            self.peak_manager.auto_pick(vis_data, self.ppm_x, self.ppm_y, threshold)
-        
-        # Redraw the UI
-        self.update_peak_markers()
-        self.plot_2d.setTitle(f"Success: Auto-picked {len(self.peak_manager.picked_peaks)} peaks above the baseline.")
-    def clear_peaks(self):
-        if not self.peak_manager.picked_peaks:
-            self.plot_2d.setTitle("No peaks to clear.")
-            return
-
-        reply = QMessageBox.question(
-            self, "Clear all peaks?", 
-            "Are you sure you want to delete all picked peaks? This cannot be undone.",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-        )
-        
-        if reply == QMessageBox.StandardButton.Yes:
-            self.peak_manager.clear_peaks()
-            self.update_peak_markers()
-            self.plot_2d.setTitle("Success: All peaks cleared.")
-            
-#---------------------------------------------------------------------        
-           
-    def silent_update_check(self):
-        repo = "21tesla/NMRdraw_lite"
-        url = f"https://api.github.com/repos/{repo}/releases/latest"
-        
-        try:
-            # GitHub's API requires a User-Agent header
-            req = urllib.request.Request(url, headers={'User-Agent': 'NMRdraw_lite-App'})
-            
-            # Added context=GLOBAL_SSL_CONTEXT to ensure macOS can verify the SSL certificate
-            with urllib.request.urlopen(req, context=GLOBAL_SSL_CONTEXT, timeout=3) as response:
-                data = json.loads(response.read().decode())
-                
-                # GitHub tags usually have a 'v' prefix (e.g., 'v1.1.0'). Strip it for comparison.
-                latest_version = data['tag_name'].lstrip('v')
-                release_url = data['html_url']
-
-            # Helper function to convert "1.2.0" into a tuple of integers (1, 2, 0)
-            def parse_version(v_string):
-                return tuple(map(int, (v_string.split("."))))
-
-            if parse_version(latest_version) > parse_version(__version__):
-                reply = QMessageBox.question(
-                    self, 
-                    "Update Available",
-                    f"A new version of NMRdraw_lite ({latest_version}) is available!\n"
-                    f"You are currently running version {__version__}.\n\n"
-                    f"Would you like to open your browser to download it?",
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-                )
-                if reply == QMessageBox.StandardButton.Yes:
-                    webbrowser.open(release_url)
-
-        except Exception:
-            pass 
-            
-#---------------------------------------------------------------------        
-            
-    def _check_1d_baseline_validity(self):
-        if self.raw_data is None or self.raw_data.ndim != 1:
-            QMessageBox.warning(self, "Invalid Mode", "Baseline correction is only available for 1D spectra.")
-            return False
-            
-        if len(self.enabled_indices) != 1:
-            QMessageBox.warning(self, "Invalid Selection", "Please ensure exactly ONE 1D spectrum is enabled to perform baseline correction.")
-            return False
-            
-        return True 
-        
-#---------------------------------------------------------------------        
-        
-    def run_als_baseline(self):
-        if not self._check_1d_baseline_validity(): return
-        
-        orig_i = self.enabled_indices[0]
-        data_1d = self.raw_data_list[orig_i]
-        
-        # Calculate the baseline using the handler
-        baseline = self.data_handler.baseline_als(np.real(data_1d))
-        
-        # Store it non-destructively
-        self.baseline_corrections[orig_i] = baseline
-        
-        self.recompute_contours()
-        self.plot_2d.setTitle("Success: ALS Baseline correction applied.")
-        
-#---------------------------------------------------------------------        
-
-    def start_interactive_baseline(self):
-        if not self._check_1d_baseline_validity(): return
-        
-        self.baseline_anchors.clear()
-        self.baseline_scatter.setData([])
-        self.baseline_scatter.setVisible(True)
-        self.set_mode('baseline_interactive')       
-
-#---------------------------------------------------------------------        
-        
-
-    def clear_baseline(self):
-        if not self._check_1d_baseline_validity(): return
-        
-        orig_i = self.enabled_indices[0]
-        if hasattr(self, 'baseline_corrections') and self.baseline_corrections[orig_i] is not None:
-            self.baseline_corrections[orig_i] = None
-            self.recompute_contours()
-            self.plot_2d.setTitle("Success: Baseline correction cleared.")
-        else:
-            self.plot_2d.setTitle("No baseline correction to clear.")     
-            
-            
-#---------------------------------------------------------------------        
-
-    def fit_1d_peaks(self, shape_type):
-        if self.raw_data is None or self.raw_data.ndim != 1:
-            QMessageBox.warning(self, "1D Only", "Rigorous peak fitting is currently only available for 1D spectra.")
-            return
-            
-        if not self.peak_manager.picked_peaks:
-            QMessageBox.warning(self, "No Peaks", "Please pick peaks before attempting to fit them.")
-            return
-
-        # --- FIX: Purge old visual curves and mathematical data before calculating new ones ---
-        self.clear_1d_fits()
-            
-        orig_i = self.enabled_indices[0]
-        y_data = self.vis_data_dict.get(orig_i) 
-        if y_data is None: return
-        x_data = self.ppm_x
-        
-        window_pts = 15
-        
-        for p in self.peak_manager.picked_peaks:
-            center_ppm = p['ppm_x']
-            idx_center = np.argmin(np.abs(x_data - center_ppm))
-            
-            start_idx = max(0, idx_center - window_pts)
-            end_idx = min(len(x_data), idx_center + window_pts + 1)
-            
-            x_fit = x_data[start_idx:end_idx]
-            y_fit = y_data[start_idx:end_idx]
-            
-            # Intelligent initial guesses for the optimizer
-            amp_guess = y_data[idx_center]
-            cen_guess = center_ppm
-            wid_guess = np.abs(x_data[0] - x_data[1]) * 4 # Guess width is ~4 data points
-            
-            try:
-                # --- FIX: Apply mathematical bounds so the solver doesn't spiral to infinity ---
-                amp_guess = max(1e-6, y_data[idx_center]) # Force positive guess
-                
-                # Bounds: ( [min_amp, min_cen, min_wid], [max_amp, max_cen, max_wid] )
-                bounds_standard = ([0, -np.inf, 0], [np.inf, np.inf, np.inf]) 
-                
-                if shape_type == 'lorentzian':
-                    popt, _ = curve_fit(self.data_handler.lorentzian, x_fit, y_fit, p0=[amp_guess, cen_guess, wid_guess], bounds=bounds_standard)
-                    area = self.data_handler.calc_analytical_area(popt[0], popt[2], 'lorentzian')
-                    p['fit_amp'], p['fit_cen'], p['fit_wid'] = popt
-                    p['fit_eta'] = 1.0
-                elif shape_type == 'gaussian':
-                    popt, _ = curve_fit(self.data_handler.gaussian, x_fit, y_fit, p0=[amp_guess, cen_guess, wid_guess], bounds=bounds_standard)
-                    area = self.data_handler.calc_analytical_area(popt[0], popt[2], 'gaussian')
-                    p['fit_amp'], p['fit_cen'], p['fit_wid'] = popt
-                    p['fit_eta'] = 0.0
-                elif shape_type == 'pseudo_voigt':
-                    bounds_pv = ([0, -np.inf, 0, 0.0], [np.inf, np.inf, np.inf, 1.0])
-                    popt, _ = curve_fit(self.data_handler.pseudo_voigt, x_fit, y_fit, p0=[amp_guess, cen_guess, wid_guess, 0.5], bounds=bounds_pv)
-                    area = self.data_handler.calc_analytical_area(popt[0], popt[2], 'pseudo_voigt', popt[3])
-                    p['fit_amp'], p['fit_cen'], p['fit_wid'], p['fit_eta'] = popt
-
-                # Update dictionary with rigorous mathematical data
-                p['fit_area'] = abs(area)
-                p['fit_type'] = shape_type
-                
-                # Snap the visual marker to the true mathematical center!
-                p['ppm_x'] = p['fit_cen'] 
-                
-            except Exception as e:
-                # If SciPy fails to converge, mark it so we don't crash the export
-                p['fit_type'] = 'failed'
-                p['fit_area'] = 0.0
-
-        self.update_peak_markers()
-        self.draw_1d_fits()
-        self.plot_2d.setTitle(f"Success: Fitted {len(self.peak_manager.picked_peaks)} peaks using {shape_type.replace('_', '-').title()}.")
-
-#---------------------------------------------------------------------        
-
-    def draw_1d_fits(self):
-        # Clear old fitted curves
-        if hasattr(self, 'fit_curves'):
-            for curve in self.fit_curves:
-                self.plot_2d.removeItem(curve)
-        self.fit_curves = []
-        
-        orig_i = self.enabled_indices[0]
-        offset_val = self.cont_sliders['offset'].value()
-        base_max = np.max(np.abs(self.current_slice_list[0])) if self.current_slice_list else 1.0
-        y_offset = (self.enabled_indices.index(orig_i) * offset_val * (base_max * 0.1))
-
-        # Draw a highlighted curve for every successfully fitted peak
-        for p in self.peak_manager.picked_peaks:
-            if p.get('fit_type') in ['lorentzian', 'gaussian', 'pseudo_voigt']:
-                window_pts = 30 # Draw a wider window so the user can see the tails matching
-                idx_center = np.argmin(np.abs(self.ppm_x - p['fit_cen']))
-                start_idx = max(0, idx_center - window_pts)
-                end_idx = min(len(self.ppm_x), idx_center + window_pts + 1)
-                
-                x_render = self.ppm_x[start_idx:end_idx]
-                
-                if p['fit_type'] == 'lorentzian':
-                    y_render = self.data_handler.lorentzian(x_render, p['fit_amp'], p['fit_cen'], p['fit_wid'])
-                elif p['fit_type'] == 'gaussian':
-                    y_render = self.data_handler.gaussian(x_render, p['fit_amp'], p['fit_cen'], p['fit_wid'])
-                else:
-                    y_render = self.data_handler.pseudo_voigt(x_render, p['fit_amp'], p['fit_cen'], p['fit_wid'], p['fit_eta'])
-
-                # Render the mathematical fit in thick magenta on top of the raw data
-                fit_curve = pg.PlotDataItem(x=x_render, y=y_render + y_offset, pen=pg.mkPen('m', width=2, style=Qt.PenStyle.DashLine))
-                self.plot_2d.addItem(fit_curve)
-                self.fit_curves.append(fit_curve)  
-                
-                
-#---------------------------------------------------------------------        
-
-    def clear_1d_fits(self):
-        """Removes fitted curves from the plot and scrubs fit data from peak dictionaries."""
-        # 1. Remove the visual dashed lines
-        if hasattr(self, 'fit_curves'):
-            for curve in self.fit_curves:
-                self.plot_2d.removeItem(curve)
-        self.fit_curves = []
-        
-        # 2. Scrub the mathematical data so ghost fits don't export or re-render
-        if hasattr(self, 'peak_manager') and self.peak_manager.picked_peaks:
-            for p in self.peak_manager.picked_peaks:
-                keys_to_remove = ['fit_type', 'fit_amp', 'fit_cen', 'fit_wid', 'fit_eta', 'fit_area']
-                for k in keys_to_remove:
-                    p.pop(k, None)  
-
-#---------------------------------------------------------------------        
-                    
-                    
-    def start_interactive_baseline(self):
-        # --- FIX: Ensure anchors list and scatter plot exist before clearing ---
-        if not hasattr(self, 'baseline_anchors'):
-            self.baseline_anchors = []
-            self.baseline_scatter = pg.ScatterPlotItem(size=10, pen=pg.mkPen('k'), brush=pg.mkBrush(0, 255, 0, 150))
-            self.plot_2d.addItem(self.baseline_scatter)
-            
-        self.baseline_anchors.clear()
-        self.baseline_scatter.setData([])
-        self.set_mode('baseline_interactive')
-        self.plot_2d.setTitle("Interactive Baseline: Left-click to add anchors, Right-click to exit.")       
-        
- #---------------------------------------------------------------------        
-                    
-         
-    def load_preferences(self):
-        self.prefs_file = "nmrdraw_preferences.json"
-        
-        # Define the default values
-        self.prefs = {
-            "baseline_1d": {"min": 0.1, "max": 100.0, "default": 5.0, "step": 0.1},
-            "phase_p0": {"min": -180.0, "max": 180.0, "step": 0.1},
-            "phase_p1": {"min": -360.0, "max": 360.0, "step": 0.1},
-            "controls": {
-                "base": {"label": "Baseline Multiplier", "min": 0.05, "max": 50.0, "default": 4.0, "is_int": False},
-                "scale": {"label": "Contour Multiplier", "min": 1.05, "max": 2.5, "default": 1.3, "is_int": False},
-                "count": {"label": "Number of Contours", "min": 1, "max": 25, "default": 15, "is_int": True},
-                "offset": {"label": "1D Stack Offset", "min": 0.0, "max": 4.0, "default": 0.0, "is_int": False}
-            }
-        }
-        
-        # Load existing preferences or create a new file
-        if os.path.exists(self.prefs_file):
-            try:
-                with open(self.prefs_file, 'r') as f:
-                    user_prefs = json.load(f)
-                    # Deep update for nested dictionary
-                    for key, val in user_prefs.items():
-                        if isinstance(val, dict) and key in self.prefs:
-                            self.prefs[key].update(val)
-                        else:
-                            self.prefs[key] = val
-            except Exception as e:
-                print(f"Error loading preferences: {e}. Using default values.")
-        else:
-            try:
-                with open(self.prefs_file, 'w') as f:
-                    json.dump(self.prefs, f, indent=4)
-            except Exception as e:
-                print(f"Error generating preferences file: {e}")                                               
-                
- #---------------------------------------------------------------------        
-
-    def open_settings_dialog(self):
-        dlg = SettingsDialog(self.prefs, self.prefs_file, self)
-        dlg.exec() 
- 
- #---------------------------------------------------------------------        
- 
