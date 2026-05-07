@@ -2,6 +2,7 @@ from PyQt6.QtWidgets import QGroupBox, QGridLayout, QLabel, QSlider, QDoubleSpin
 from PyQt6.QtCore import Qt
 
 class PhaseControlWidget(QGroupBox):
+
     def __init__(self, parent=None):
         super().__init__("Phase Correction", parent)
         self.phase_ui = {}
@@ -9,6 +10,8 @@ class PhaseControlWidget(QGroupBox):
         self.on_phase_released_callback = None
         self.init_ui()
         self.setEnabled(False)
+
+#---------------------------------------------------------------------------------------
 
     def init_ui(self):
         grid_phase = QGridLayout()
@@ -68,6 +71,8 @@ class PhaseControlWidget(QGroupBox):
             self.phase_ui[key] = (sl, sb)
                         
         self.setLayout(grid_phase)
+
+#---------------------------------------------------------------------------------------
 
     def update_from_state(self, axis, phase_state):
         self.setTitle(f"Phase Correction ({axis.upper()}-Axis)")

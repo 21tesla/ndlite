@@ -1,8 +1,11 @@
 from PyQt6.QtGui import QAction
 
 class MenuBuilder:
+
     def __init__(self, main_window):
         self.mw = main_window
+
+#---------------------------------------------------------------------------------------
 
     def build(self):
         menubar = self.mw.menuBar()
@@ -79,7 +82,7 @@ class MenuBuilder:
         
         baseline_menu = self.mw.one_d_menu.addMenu("Baseline")
         
-        als_action = QAction("Auto-Correct Baseline (ALS)", self.mw)
+        als_action = QAction("Auto-Correct Baseline", self.mw)
         als_action.triggered.connect(self.mw.baseline_controller.run_als_baseline)
         baseline_menu.addAction(als_action)
         

@@ -4,10 +4,14 @@ import os
 
 from PyQt6.QtWidgets import QGroupBox
 from PyQt6.QtCore import Qt
+
 class DataListWidget(QGroupBox):
+
     def __init__(self, parent=None):
         super().__init__("Data", parent)
         self.init_ui()
+
+#---------------------------------------------------------------------------------------
 
     def init_ui(self):
         v_file = QVBoxLayout()
@@ -23,11 +27,15 @@ class DataListWidget(QGroupBox):
         v_file.addWidget(self.file_scroll)
         self.setLayout(v_file)
 
+#---------------------------------------------------------------------------------------
+
     def clear(self):
         for i in reversed(range(self.file_layout.count())):
             widget = self.file_layout.itemAt(i).widget()
             if widget:
                 widget.deleteLater()
+
+#---------------------------------------------------------------------------------------
 
     def add_spectrum(self, model, toggle_callback, color_callback):
         row_widget = QWidget()

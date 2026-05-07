@@ -37,13 +37,13 @@ from ui.controllers.baseline_controller import BaselineController
 from ui.controllers.peak_controller import PeakController
 from ui.controllers.io_controller import IOController
 from ui.exporter import Exporter
-from core.updater import Updater
+from core.updater import Updater, VERSION
 from core.models.spectrum_model import SpectrumModel
 
 #---------------------------------------------------------------------        
 
 
-__version__ = "0.3.0"
+__version__ = VERSION
 
 
 #---------------------------------------------------------------------        

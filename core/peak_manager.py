@@ -5,7 +5,8 @@ class PeakManager:
         self.picked_peaks = []
         self.peak_counter = 0
 
-    # Update 1: Pass Z-plane context to force peaks
+#---------------------------------------------------------------------------------------
+
     def add_force_peak(self, ppm_x, ppm_y, ppm_z=None, closest_z_idx=None):
         self.peak_counter += 1
         self.picked_peaks.append({
@@ -17,16 +18,22 @@ class PeakManager:
         })
         return self.picked_peaks
 
+#---------------------------------------------------------------------------------------
+
     def renumber_peaks(self):
         for i, p in enumerate(self.picked_peaks):
             p['id'] = i + 1
         self.peak_counter = len(self.picked_peaks)
         return self.picked_peaks
 
+#---------------------------------------------------------------------------------------
+
     def clear_peaks(self):
         self.picked_peaks.clear()
         self.peak_counter = 0
         return self.picked_peaks
+
+#---------------------------------------------------------------------------------------
                 
     def refine_peak(self, click_ppm_x, click_ppm_y, data, ppm_x, ppm_y, threshold=0.0, click_z_idx=None, ppm_z=None):
         if data is None or data.size == 0:
@@ -193,7 +200,9 @@ class PeakManager:
             })
 
         return self.picked_peaks
-        
+
+#---------------------------------------------------------------------------------------
+       
     def delete_nearest_peak(self, click_x, click_y, dx_scale, dy_scale):
         if not self.picked_peaks:
             return self.picked_peaks
@@ -211,6 +220,8 @@ class PeakManager:
             del self.picked_peaks[best_idx]
             
         return self.picked_peaks
+
+#---------------------------------------------------------------------------------------
 
     def auto_pick(self, data, ppm_x, ppm_y, threshold=0.0, ppm_z=None):
         """Scans the entire spectrum for local extrema above the noise threshold."""
@@ -243,7 +254,6 @@ class PeakManager:
                     'intensity': data[idx]
                 })
                 
-                                            
         elif data.ndim == 2:
             ppm_step_y = ppm_y[1] - ppm_y[0] if len(ppm_y) > 1 else 0
             

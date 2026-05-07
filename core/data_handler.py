@@ -98,7 +98,6 @@ class DataHandler:
         p: Asymmetry parameter (0.001 to 0.01 is typical).
         """
         L = len(y)
-        # Fix 1: Explicitly declare dtype=float to resolve FutureWarning
         D = sparse.diags([1, -2, 1], [0, -1, -2], shape=(L, L - 2), dtype=float)
         D = lam * D.dot(D.transpose())
         w = np.ones(L)
@@ -107,7 +106,6 @@ class DataHandler:
             W = sparse.spdiags(w, 0, L, L)
             Z = W + D
             
-            # Fix 2: Convert Z to CSR format before solving to resolve SparseEfficiencyWarning
             z = spsolve(Z.tocsr(), w * y)
             w = p * (y > z) + (1 - p) * (y < z)
             

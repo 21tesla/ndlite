@@ -3,7 +3,11 @@ import json
 from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QPushButton
 from PyQt6.QtCore import Qt
 
+#---------------------------------------------------------------------------------------
+#---------------------------------------------------------------------------------------
+
 class HelpDialog(QDialog):
+
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("NMRdraw_lite Shortcuts")
@@ -44,8 +48,11 @@ class HelpDialog(QDialog):
         btn.clicked.connect(self.accept)
         layout.addWidget(btn)
 
+#---------------------------------------------------------------------------------------
+#---------------------------------------------------------------------------------------
 
 class SettingsDialog(QDialog):
+
     def __init__(self, prefs, prefs_file, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Preferences")
@@ -55,6 +62,7 @@ class SettingsDialog(QDialog):
         self.flat_prefs = self.flatten_dict(self.prefs)
         
         self.init_ui()
+#---------------------------------------------------------------------------------------
 
     def init_ui(self):
         layout = QVBoxLayout(self)
@@ -87,6 +95,8 @@ class SettingsDialog(QDialog):
         self.button_box.rejected.connect(self.reject)
         layout.addWidget(self.button_box)
 
+#---------------------------------------------------------------------------------------
+
     def flatten_dict(self, d, parent_key='', sep='.'):
         items = []
         for k, v in d.items():
@@ -96,6 +106,8 @@ class SettingsDialog(QDialog):
             else:
                 items.append((new_key, v))
         return dict(items)
+
+#---------------------------------------------------------------------------------------
 
     def unflatten_dict(self, d, sep='.'):
         result_dict = dict()
@@ -108,6 +120,8 @@ class SettingsDialog(QDialog):
                 d_ref = d_ref[part]
             d_ref[parts[-1]] = v
         return result_dict
+
+#---------------------------------------------------------------------------------------
 
     def save_settings(self):
         updated_flat = {}

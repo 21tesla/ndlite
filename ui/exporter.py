@@ -1,14 +1,20 @@
 from PyQt6.QtCore import QTimer
 
 class Exporter:
+
     def __init__(self, main_window):
         self.main_window = main_window
+#---------------------------------------------------------------------------------------
 
     def export_spectrum(self):
         self._export_with_mode('spectrum')
 
+#---------------------------------------------------------------------------------------
+
     def export_peaks_spectrum(self):
         self._export_with_mode('peaks')
+
+#---------------------------------------------------------------------------------------
 
     def _export_with_mode(self, mode):
         self.main_window.is_exporting = True
@@ -27,9 +33,9 @@ class Exporter:
         self.main_window.plot_2d.setTitle(" ")
         
         if mode == 'spectrum':
-            self.main_window.hide_peaks()
+            self.main_window.peak_controller.hide_peaks()
         elif mode == 'peaks':
-            self.main_window.show_peaks()
+            self.main_window.peak_controller.show_peaks()
                 
         scene = self.main_window.plot_2d.scene()
         scene.contextMenuItem = self.main_window.plot_2d.getPlotItem()
@@ -40,6 +46,8 @@ class Exporter:
             self.export_poll_timer.timeout.connect(self._check_export_dialog_closed)
         self.export_poll_timer.start(200)
 
+#---------------------------------------------------------------------------------------
+
     def _check_export_dialog_closed(self):
         try:
             scene = self.main_window.plot_2d.scene()
@@ -49,6 +57,8 @@ class Exporter:
         except RuntimeError:
             self.export_poll_timer.stop()
             self._restore_export_state()
+
+#---------------------------------------------------------------------------------------
 
     def _restore_export_state(self):
         self.main_window.is_exporting = False
