@@ -65,7 +65,7 @@ class FittingController:
                 p['fit_type'] = 'failed'
                 p['fit_area'] = 0.0
 
-        self.main_window.update_peak_markers()
+        self.main_window.peak_controller.update_peak_markers()
         self.draw_1d_fits()
         self.main_window.plot_2d.setTitle(f"Success: Fitted {len(self.main_window.peak_manager.picked_peaks)} peaks using {shape_type.replace('_', '-').title()}.")
 
@@ -75,7 +75,7 @@ class FittingController:
         self.fit_curves = []
         
         orig_i = self.main_window.enabled_indices[0]
-        offset_val = self.main_window.display_controls.get_value('offset')
+        offset_val = self.main_window.cont_sliders['offset'].value()
         base_max = np.max(np.abs(self.main_window.current_slice_list[0])) if self.main_window.current_slice_list else 1.0
         y_offset = (self.main_window.enabled_indices.index(orig_i) * offset_val * (base_max * 0.1))
 

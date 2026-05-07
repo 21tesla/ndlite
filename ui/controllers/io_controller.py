@@ -122,7 +122,18 @@ class IOController:
             order = self.mw.dic.get('FDDIMORDER', [2, 1, 3, 4])
             is_1d = (ndim == 1)
 
-            self.mw.display_controls.set_1d_mode(is_1d)
+            # Instead of self.mw.display_controls.set_1d_mode(is_1d)
+            for key in ['base', 'scale', 'count']:
+                lbl, sl, sb = self.mw.cont_widgets[key]
+                lbl.setEnabled(not is_1d)
+                sl.setEnabled(not is_1d)
+                sb.setEnabled(not is_1d)
+
+            lbl, sl, sb = self.mw.cont_widgets['offset']
+            lbl.setEnabled(is_1d)
+            sl.setEnabled(is_1d)
+            sb.setEnabled(is_1d)
+            
             if hasattr(self.mw, 'one_d_menu') and hasattr(self.mw, 'two_d_menu'):
                 self.mw.one_d_menu.menuAction().setVisible(is_1d)
                 self.mw.two_d_menu.menuAction().setVisible(not is_1d)

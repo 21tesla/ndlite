@@ -31,6 +31,14 @@ class MenuBuilder:
         renumber_peaks_action.setShortcut("Shift+R")
         renumber_peaks_action.triggered.connect(self.mw.peak_controller.renumber_peaks)
 
+        pick_peaks_action = QAction("Pick Peaks", self.mw)
+        pick_peaks_action.setShortcut("p")
+        pick_peaks_action.triggered.connect(lambda: self.mw.set_mode('peak_pick'))
+
+        force_pick_action = QAction("Force Pick", self.mw)
+        force_pick_action.setShortcut("Shift+P")
+        force_pick_action.triggered.connect(self.mw.peak_controller.force_pick)
+
         # --- File Menu ---
         file_menu = menubar.addMenu("File")
         
@@ -86,6 +94,8 @@ class MenuBuilder:
         self.mw.one_d_menu.addSeparator()
 
         self.mw.one_d_menu.addAction(auto_pick_action)
+        self.mw.one_d_menu.addAction(pick_peaks_action)
+        self.mw.one_d_menu.addAction(force_pick_action)
 
         self.mw.one_d_menu.addSeparator()
 
@@ -126,15 +136,7 @@ class MenuBuilder:
         self.mw.two_d_menu = menubar.addMenu("2D/3D-Mode")
         
         self.mw.two_d_menu.addAction(auto_pick_action)
-        
-        pick_peaks_action = QAction("Pick Peaks", self.mw)
-        pick_peaks_action.setShortcut("p")
-        pick_peaks_action.triggered.connect(lambda: self.mw.set_mode('peak_pick'))
         self.mw.two_d_menu.addAction(pick_peaks_action)
-        
-        force_pick_action = QAction("Force Pick", self.mw)
-        force_pick_action.setShortcut("Shift+P")
-        force_pick_action.triggered.connect(self.mw.peak_controller.force_pick)
         self.mw.two_d_menu.addAction(force_pick_action)
 
         self.mw.two_d_menu.addAction(show_peaks_action)

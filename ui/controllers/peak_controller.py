@@ -101,19 +101,18 @@ class PeakController:
         for item in self.mw.peak_text_items.values():
             item.setVisible(False)
 
-    def force_pick(self):
+    def force_pick(self, x=None, y=None):
         if self.mw.raw_data is not None:
-            if self.mw.raw_data.ndim < 2:
-                QMessageBox.information(self.mw, "Feature in Progress", "Force Picking is only supported for 2D and 3D spectra.")
-                return
-
             if self.mw.current_mode != 'peak_pick':
                 self.mw.set_mode('peak_pick')
+
+            pos_x = x if x is not None else self.mw.v_pos
+            pos_y = y if y is not None else self.mw.h_pos
 
             current_z_idx = self.mw.slider_z.value() - 1 if self.mw.nz > 1 else None
             current_ppm_z = self.mw.ppm_z[current_z_idx] if self.mw.nz > 1 else None
 
-            self.mw.peak_manager.add_force_peak(self.mw.v_pos, self.mw.h_pos, ppm_z=current_ppm_z, closest_z_idx=current_z_idx)
+            self.mw.peak_manager.add_force_peak(pos_x, pos_y, ppm_z=current_ppm_z, closest_z_idx=current_z_idx)
             self.update_peak_markers()
 
     def renumber_peaks(self):
@@ -206,7 +205,7 @@ class PeakController:
         if raw_data.ndim == 1:
             base_mult = self.mw.spinbox_1d_base.value()
         else:
-            base_mult = self.mw.display_controls.get_value('base')
+            base_mult = self.mw.cont_sliders['base'].value()
             
         noise_rmsd = self.mw.data_handler.calculate_rmsd(vis_data)
         threshold = noise_rmsd * base_mult * 1.5

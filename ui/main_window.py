@@ -31,7 +31,6 @@ from core.peak_manager import PeakManager
 
 from ui.components.data_list_widget import DataListWidget
 from ui.components.phase_control_widget import PhaseControlWidget
-from ui.components.display_control_widget import DisplayControlWidget
 from ui.components.menu_builder import MenuBuilder
 from ui.controllers.fitting_controller import FittingController
 from ui.controllers.baseline_controller import BaselineController
@@ -545,8 +544,7 @@ class NMRViewerApp(QMainWindow):
             return
 
         if mode in ['peak_pick', 'peak_delete']:
-            if self.raw_data is None or self.raw_data.ndim < 2: # Changed from != 2 to < 2
-                QMessageBox.information(self, "Feature in Progress", f"Peak picking is currently only supported for 2D and 3D spectra.")
+            if self.raw_data is None:
                 mode = None 
          
         self.current_mode = mode
@@ -591,15 +589,25 @@ class NMRViewerApp(QMainWindow):
         elif mode == 'peak_pick':
             self.active_axis = None
             self.grp_phase.setEnabled(False)
-            self.hline.setVisible(True)
-            self.vline.setVisible(True)
-            self.plot_2d.setTitle("Peak Picking Mode. Click near a peak to refine. Press Esc to exit.")
+            if self.raw_data is not None and self.raw_data.ndim == 1:
+                self.hline.setVisible(False)
+                self.vline.setVisible(True)
+                self.plot_2d.setTitle("Peak Picking Mode: Click peak to refine. Press Esc to exit.")
+            else:
+                self.hline.setVisible(True)
+                self.vline.setVisible(True)
+                self.plot_2d.setTitle("Peak Picking Mode: Click near a peak to refine. Press Esc to exit.")
         elif mode == 'peak_delete':
             self.active_axis = None
             self.grp_phase.setEnabled(False)
-            self.hline.setVisible(True)
-            self.vline.setVisible(True)
-            self.plot_2d.setTitle("Delete Mode: Click near a peak to remove it. Press Esc to exit.")
+            if self.raw_data is not None and self.raw_data.ndim == 1:
+                self.hline.setVisible(False)
+                self.vline.setVisible(True)
+                self.plot_2d.setTitle("Delete Mode: Click near a peak to remove it. Press Esc to exit.")
+            else:
+                self.hline.setVisible(True)
+                self.vline.setVisible(True)
+                self.plot_2d.setTitle("Delete Mode: Click near a peak to remove it. Press Esc to exit.")
         elif mode == 'baseline_interactive':
             self.active_axis = None
             self.grp_phase.setEnabled(False)
@@ -628,8 +636,22 @@ class NMRViewerApp(QMainWindow):
                 self.vline.setVisible(False)
                 self.plot_2d.setTitle("Please load a file.")
 
+    def _check_1d_baseline_validity(self):
+        if not self.enabled_indices:
+            QMessageBox.warning(self, "No Data", "Please load a spectrum first.")
+            return False
+            
+        orig_i = self.enabled_indices[0]
+        vis_data = self.vis_data_dict.get(orig_i)
+        
+        if vis_data is None or self.raw_data_list[orig_i].ndim != 1:
+            QMessageBox.warning(self, "1D Only", "This feature is currently only supported for 1D spectra.")
+            return False
+            
+        return True
+
 #---------------------------------------------------------------------        
-                
+
     def on_mouse_moved(self, pos):
         # Freeze crosshair updates while the export dialog is active
         if getattr(self, 'is_exporting', False):
@@ -689,13 +711,10 @@ class NMRViewerApp(QMainWindow):
                 click_ppm_y = mouse_point.y()
                 
                 if self.current_mode == 'peak_pick':
-                    current_z_idx = self.slider_z.value() - 1 if hasattr(self, 'nz') and self.nz > 1 else None
-                    current_ppm_z = self.ppm_z[current_z_idx] if hasattr(self, 'nz') and self.nz > 1 else None
-
                     if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
-                        self.peak_manager.add_force_peak(click_ppm_x, click_ppm_y, ppm_z=current_ppm_z, closest_z_idx=current_z_idx)
-                        self.peak_controller.update_peak_markers()
+                        self.peak_controller.force_pick(click_ppm_x, click_ppm_y)
                     else:
+                        current_z_idx = self.slider_z.value() - 1 if hasattr(self, 'nz') and self.nz > 1 else None
                         if self.enabled_indices and hasattr(self, 'vis_data_dict'):
                             orig_i = self.enabled_indices[0]
                             vis_data = self.vis_data_dict.get(orig_i)
@@ -788,13 +807,7 @@ class NMRViewerApp(QMainWindow):
 
         if text == 'p':
             if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
-                if self.raw_data is not None:
-                    if self.current_mode != 'peak_pick':
-                        self.set_mode('peak_pick')
-                    
-                    # Delegate to manager
-                    self.peak_manager.add_force_peak(self.v_pos, self.h_pos)
-                    self.peak_controller.update_peak_markers()
+                self.peak_controller.force_pick()
             else:
                 self.set_mode('peak_pick')
             return
