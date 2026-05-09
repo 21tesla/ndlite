@@ -7,14 +7,13 @@ import certifi
 
 GLOBAL_SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
 
-# Central version definition
 VERSION = "0.3.1"
 
 class Updater:
     def __init__(self, main_window):
         self.main_window = main_window
         self.version = VERSION
-        self.repo = "21tesla/NMRdraw_lite"
+        self.repo = "21tesla/ndlite"
 
     def _get_latest_release(self):
         """Helper to fetch latest release info from GitHub."""

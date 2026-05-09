@@ -24,21 +24,21 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
 
 from PyQt6.QtCore import Qt, QTimer, qInstallMessageHandler, QtMsgType
 
-from ui.plot_widget import TrackpadPlotWidget
-from ui.dialogs import HelpDialog
-from core.data_handler import DataHandler
-from core.peak_manager import PeakManager
+from ndlite.ui.plot_widget import TrackpadPlotWidget
+from ndlite.ui.dialogs import HelpDialog
+from ndlite.core.data_handler import DataHandler
+from ndlite.core.peak_manager import PeakManager
 
-from ui.components.data_list_widget import DataListWidget
-from ui.components.phase_control_widget import PhaseControlWidget
-from ui.components.menu_builder import MenuBuilder
-from ui.controllers.fitting_controller import FittingController
-from ui.controllers.baseline_controller import BaselineController
-from ui.controllers.peak_controller import PeakController
-from ui.controllers.io_controller import IOController
-from ui.exporter import Exporter
-from core.updater import Updater, VERSION
-from core.models.spectrum_model import SpectrumModel
+from ndlite.ui.components.data_list_widget import DataListWidget
+from ndlite.ui.components.phase_control_widget import PhaseControlWidget
+from ndlite.ui.components.menu_builder import MenuBuilder
+from ndlite.ui.controllers.fitting_controller import FittingController
+from ndlite.ui.controllers.baseline_controller import BaselineController
+from ndlite.ui.controllers.peak_controller import PeakController
+from ndlite.ui.controllers.io_controller import IOController
+from ndlite.ui.exporter import Exporter
+from ndlite.core.updater import Updater, VERSION
+from ndlite.core.models.spectrum_model import SpectrumModel
 
 #---------------------------------------------------------------------        
 

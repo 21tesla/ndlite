@@ -6,8 +6,8 @@ import numpy as np
 import os
 from pathlib import Path
 import json
-from core.models.spectrum_model import SpectrumModel
-from ui.dialogs import SettingsDialog
+from ndlite.core.models.spectrum_model import SpectrumModel
+from ndlite.ui.dialogs import SettingsDialog
 
 class IOController:
     def __init__(self, main_window):

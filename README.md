@@ -1,5 +1,5 @@
 
-# NMRdraw_lite
+# ndlite
 
 ![Python 3.12](https://img.shields.io/badge/Python-3.12-blue?logo=python&logoColor=white)
 ![PyQt6](https://img.shields.io/badge/GUI-PyQt6-41CD52?logo=qt&logoColor=white)
@@ -12,9 +12,9 @@
 ## Installation
 
 ```
-pip install -r requirements.txt 
+python -m build 
 
-python NMRdraw_lite.py [file1.ft file2.ft ...]
+ndlite [file1.ft file2.ft ...]
 ```
 
 ## Example Data
