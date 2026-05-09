@@ -7,15 +7,15 @@ from setuptools import setup
 CONDA_ENV_LIB = os.path.join(sys.prefix, 'lib')
 
 # 1. Dynamically extract the version from updater.py
-with open('../src/ndlite/core/updater.py', 'r') as f:
+with open('src/ndlite/core/updater.py', 'r') as f:
     version_string = re.search(r'^VERSION\s*=\s*[\'"]([^\'"]*)[\'"]', f.read(), re.MULTILINE).group(1)
 
-APP = ['../src/ndlite/main.py']
+APP = ['src/ndlite/main.py']
 DATA_FILES = [] 
 
 # 2. Add the plist dictionary to explicitly set the Mac App bundle versions
 OPTIONS = {
-    'iconfile': '../icons/app_icon.icns',  
+    'iconfile': 'icons/app_icon.icns',  
     'argv_emulation': True,                 
     'packages': ['requests'],
     'includes': ['ssl'],
