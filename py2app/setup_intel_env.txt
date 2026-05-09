@@ -1,0 +1,12 @@
+arch -x86_64 /bin/bash
+
+source ~/.bash_profile
+
+CONDA_SUBDIR=osx-64 
+
+conda activate nmrdraw-lite-intel
+
+conda config --env --set subdir osx-64
+
+
+
