@@ -1,5 +1,6 @@
-from PyQt6.QtWidgets import QFileDialog, QMessageBox, QWidget, QHBoxLayout, QCheckBox, QLabel, QPushButton, QColorDialog
-from PyQt6.QtGui import QColor, QFont
+from PyQt6.QtWidgets import QFileDialog, QMessageBox, QWidget, QHBoxLayout, QVBoxLayout, QCheckBox, QLabel, QPushButton, QColorDialog, QDialog, QComboBox
+from PyQt6.QtGui import QColor, QFont, QFontDatabase
+from PyQt6.QtCore import Qt
 import pyqtgraph as pg
 import nmrglue as ng
 import numpy as np
@@ -8,6 +9,136 @@ from pathlib import Path
 import json
 from ndlite.core.models.spectrum_model import SpectrumModel
 from ndlite.ui.dialogs import SettingsDialog
+
+class SpectrumInfoDialog(QDialog):
+    def __init__(self, io_controller, parent=None):
+        super().__init__(parent)
+        self.io_controller = io_controller
+        self.setWindowTitle("Spectrum Info")
+        self.resize(600, 400)
+        
+        layout = QVBoxLayout(self)
+        
+        self.combo_box = QComboBox()
+        for i in range(len(self.io_controller.mw.raw_data_list)):
+            model_name = "Unknown"
+            item = self.io_controller.mw.data_list_widget.file_layout.itemAt(i)
+            if item and item.widget():
+                lbl = item.widget().findChild(QLabel)
+                if lbl:
+                    model_name = lbl.text()
+            self.combo_box.addItem(model_name, userData=i)
+            
+        self.combo_box.currentIndexChanged.connect(self.update_info)
+        layout.addWidget(self.combo_box)
+        
+        self.info_label = QLabel()
+        
+        fixed_font = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont)
+        fixed_font.setPointSize(10)
+        self.info_label.setFont(fixed_font)
+        
+        self.info_label.setTextFormat(Qt.TextFormat.RichText)
+        self.info_label.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        layout.addWidget(self.info_label)
+        
+        # Select the initially enabled one, if any
+        if hasattr(self.io_controller.mw, 'enabled_indices') and self.io_controller.mw.enabled_indices:
+            start_index = self.io_controller.mw.enabled_indices[0]
+            self.combo_box.setCurrentIndex(start_index)
+            self.update_info(start_index)
+        else:
+            self.combo_box.setCurrentIndex(0)
+            self.update_info(0)
+
+    def update_info(self, index):
+        if index < 0 or index >= len(self.io_controller.mw.raw_data_list):
+            return
+            
+        dic = self.io_controller.mw.dic_list[index]
+        data = self.io_controller.mw.raw_data_list[index]
+        model = self.combo_box.itemText(index)
+
+        ndim = int(dic.get('FDDIMCOUNT', data.ndim))
+        
+        # Determine 2DMODE
+        fd2dphase = dic.get('FD2DPHASE', 0.0)
+        mode_2d_str = "States" if fd2dphase == 2.0 else ("TPPI" if fd2dphase == 1.0 else ("Sequential" if fd2dphase == 0.0 else str(fd2dphase)))
+        transposed_str = "Transposed" if dic.get('FDTRANSPOSED', 0.0) == 1.0 else "Not Transposed"
+        
+        quad_flag = dic.get('FDQUADFLAG', 0.0)
+        quad_str = "Real" if quad_flag == 1.0 else ("Complex" if quad_flag == 0.0 else str(quad_flag))
+
+        pipe_flag = int(dic.get('FDPIPEFLAG', 0.0))
+        cube_flag = int(dic.get('FDCUBEFLAG', 0.0))
+        file_count = int(dic.get('FDFILECOUNT', 1.0))
+
+        # Reconstruct size like 710x96x80x1
+        dim_sizes = []
+        if ndim >= 1: dim_sizes.append(str(int(dic.get('FDSIZE', data.shape[-1]))))
+        if ndim >= 2: dim_sizes.append(str(int(dic.get('FDSPECNUM', data.shape[-2] if data.ndim > 1 else 1))))
+        if ndim >= 3: dim_sizes.append(str(int(dic.get('FDF3SIZE', data.shape[-3] if data.ndim > 2 else 1))))
+        if ndim >= 4: dim_sizes.append(str(int(dic.get('FDF4SIZE', data.shape[-4] if data.ndim > 3 else 1))))
+        while len(dim_sizes) < 4: dim_sizes.append("1")
+        shape_str = "x".join(dim_sizes)
+        
+        is_stream = "3D Stream" if ndim == 3 and pipe_flag == 1 else ("2D Stream" if ndim == 2 and pipe_flag == 1 else "")
+
+        # Extract dimension order from FDDIMORDER parameters
+        dim_order_list = []
+        for i in range(1, 5):
+             val = dic.get(f'FDDIMORDER{i}')
+             if val is not None:
+                  dim_order_list.append(str(int(val)))
+             elif dic.get('FDDIMORDER') is not None and i <= len(dic.get('FDDIMORDER')):
+                  dim_order_list.append(str(int(dic['FDDIMORDER'][i-1])))
+        
+        dim_order_str = " ".join(dim_order_list[:ndim]) if dim_order_list else "Unknown"
+
+        info_text = f"<pre>"
+        info_text += f"FILE: {model}  DIM: {ndim}  QUAD: {quad_str}  2DMODE: {mode_2d_str} {transposed_str}\n"
+        info_text += f"ORDER: {dim_order_str}  PIPE: {pipe_flag}  CUBE: {cube_flag}  FILES: {file_count}  {shape_str}  {is_stream}\n\n"
+        info_text += f"               {'X-Axis':<14}{'Y-Axis':<14}{'Z-Axis':<14}\n\n"
+        
+        axes_data = []
+        for i in range(3):
+             if i < len(dim_order_list):
+                  fdf_idx = dim_order_list[i]
+             else:
+                  fdf_idx = str(i+1) # Fallback
+                  
+             axes_data.append({
+                 'size': dic.get(f'FDF{fdf_idx}FTSIZE', 0.0),
+                 'apod': dic.get(f'FDF{fdf_idx}TDSIZE', 0.0),
+                 'sw': dic.get(f'FDF{fdf_idx}SW', 0.0),
+                 'obs': dic.get(f'FDF{fdf_idx}OBS', 0.0),
+                 'orig': dic.get(f'FDF{fdf_idx}ORIG', 0.0),
+                 'domain': "Freq" if dic.get(f'FDF{fdf_idx}FTFLAG', 0.0) == 1.0 else "Time",
+                 'mode': "Real" if dic.get(f'FDF{fdf_idx}QUADFLAG', 0.0) == 1.0 else "Complex",
+                 'name': dic.get(f'FDF{fdf_idx}LABEL', 'None')
+             })
+
+        def format_row(label, key, fmt):
+             row = f"{label:<13}"
+             for i in range(min(ndim, 3)):
+                  val = axes_data[i][key]
+                  if isinstance(val, float):
+                       row += f"{val:{fmt}} "
+                  elif isinstance(val, str):
+                       row += f"{val:>13} "
+             return row + "\n"
+
+        info_text += format_row("DATA SIZE:", 'size', '>13.0f')
+        info_text += format_row("APOD SIZE:", 'apod', '>13.0f')
+        info_text += format_row("SW Hz:", 'sw', '>13.6f')
+        info_text += format_row("OBS MHz:", 'obs', '>13.6f')
+        info_text += format_row("ORIG Hz:", 'orig', '>13.6f')
+        info_text += format_row("DOMAIN:", 'domain', '')
+        info_text += format_row("MODE:", 'mode', '')
+        info_text += format_row("NAME:", 'name', '')
+
+        info_text += "</pre>"
+        self.info_label.setText(info_text)
 
 class IOController:
     def __init__(self, main_window):
@@ -53,6 +184,14 @@ class IOController:
 
     def open_settings_dialog(self):
         dlg = SettingsDialog(self.mw.prefs, self.mw.prefs_file, self.mw)
+        dlg.exec()
+
+    def show_spectrum_info(self):
+        if not self.mw.raw_data_list or not self.mw.dic_list:
+            QMessageBox.information(self.mw, "Spectrum Info", "No spectrum loaded.")
+            return
+
+        dlg = SpectrumInfoDialog(self, self.mw)
         dlg.exec()
 
     def load_file_dialog(self):

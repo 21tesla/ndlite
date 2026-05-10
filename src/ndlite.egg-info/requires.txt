@@ -1,0 +1,12 @@
+nmrglue
+numpy
+PyQt6
+pyqt6_sip
+pyqtgraph
+scipy
+certifi
+
+[dev]
+black
+flake8
+pytest

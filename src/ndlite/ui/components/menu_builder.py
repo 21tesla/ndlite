@@ -50,6 +50,10 @@ class MenuBuilder:
         load_action.triggered.connect(self.mw.io_controller.load_file_dialog)
         file_menu.addAction(load_action)
 
+        spectrum_info_action = QAction("Spectrum Info", self.mw)
+        spectrum_info_action.triggered.connect(self.mw.io_controller.show_spectrum_info)
+        file_menu.addAction(spectrum_info_action)
+
         file_menu.addSeparator()
         
         settings_action = QAction("Settings...", self.mw)
@@ -105,6 +109,12 @@ class MenuBuilder:
         peak_funcs_menu = self.mw.one_d_menu.addMenu("Peak functions")
         peak_funcs_menu.addAction(show_peaks_action)
         peak_funcs_menu.addAction(hide_peaks_action)
+        
+        delete_peaks_action = QAction("Delete Peaks", self.mw)
+        delete_peaks_action.setShortcut("d")
+        delete_peaks_action.triggered.connect(lambda: self.mw.set_mode('peak_delete'))
+        peak_funcs_menu.addAction(delete_peaks_action)
+        
         peak_funcs_menu.addAction(clear_peaks_action)
         peak_funcs_menu.addAction(renumber_peaks_action)
 
@@ -145,9 +155,6 @@ class MenuBuilder:
         self.mw.two_d_menu.addAction(show_peaks_action)
         self.mw.two_d_menu.addAction(hide_peaks_action)
         
-        delete_peaks_action = QAction("Delete Peaks", self.mw)
-        delete_peaks_action.setShortcut("d")
-        delete_peaks_action.triggered.connect(lambda: self.mw.set_mode('peak_delete'))
         self.mw.two_d_menu.addAction(delete_peaks_action)
         
         self.mw.two_d_menu.addAction(clear_peaks_action)

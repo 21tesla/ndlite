@@ -496,10 +496,19 @@ class NMRViewerApp(QMainWindow):
         main_layout.addWidget(top_panel, stretch=0)
 
         self.plot_2d = TrackpadPlotWidget(title="Please load a file.")
-        self.plot_2d.setLabel('bottom', "X-Axis", units="ppm")
-        self.plot_2d.setLabel('left', "Y-Axis", units="ppm")
+
+        x_axis = self.plot_2d.getAxis('bottom')
+        y_axis = self.plot_2d.getAxis('left')
+
+        x_axis.enableAutoSIPrefix(False)
+        y_axis.enableAutoSIPrefix(False)
+
+        x_axis.setLabel("X-Axis", units="ppm")
+        y_axis.setLabel("Y-Axis", units="ppm")
+
         self.plot_2d.getViewBox().invertY(True)
-        self.plot_2d.getViewBox().invertX(True)
+        
+        self.plot_2d.getViewBox().invertX(True)    
         self.plot_2d.getViewBox().sigRangeChanged.connect(self.update_live_trace)
         self.plot_2d.scene().sigMouseMoved.connect(self.on_mouse_moved)
         self.plot_2d.scene().sigMouseClicked.connect(self.on_mouse_clicked)

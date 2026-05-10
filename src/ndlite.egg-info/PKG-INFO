@@ -1,3 +1,27 @@
+Metadata-Version: 2.4
+Name: ndlite
+Version: 0.3.1
+Summary: A Python-based NMR spectrum visualization tool
+Author: Logan Donaldson
+License-Expression: MIT
+Classifier: Programming Language :: Python :: 3
+Classifier: Operating System :: OS Independent
+Classifier: Topic :: Scientific/Engineering :: Chemistry
+Classifier: Topic :: Scientific/Engineering :: Bio-Informatics
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: nmrglue
+Requires-Dist: numpy
+Requires-Dist: PyQt6
+Requires-Dist: pyqt6_sip
+Requires-Dist: pyqtgraph
+Requires-Dist: scipy
+Requires-Dist: certifi
+Provides-Extra: dev
+Requires-Dist: black; extra == "dev"
+Requires-Dist: flake8; extra == "dev"
+Requires-Dist: pytest; extra == "dev"
+
 
 # ndlite
 
@@ -6,7 +30,7 @@
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![macOS](https://img.shields.io/badge/macOS-Standalone_App-white?logo=apple&logoColor=black)
 
-### A Python utility for viewing and peak picking NMR data processed with NMRpipe. 
+### A fast, lightweight Python utility for viewing NMR data processed with NMRpipe. 
 
 
 ## Installation
@@ -29,21 +53,13 @@ Thank you to **Dr. Frank Delagio** (IBBR / U Maryland) for the original NMRdraw 
 
 ## Features
 **1D Spectra:** stack plots with variable offsets
-![1D_example1](assets/1D_example1.png)
 
-**1D Spectra:** peak picking
-![1D_example2](assets/1D_example2.png)
+![1D_example](assets/1D_example.png)
 
 **2D Spectra:** auto and manual peak picking
-![2D_example1](assets/2D_example1.png)
+
+![2D_example](assets/2D_example.png)
 
 **3D Spectra:** fast scrolling through planes
-![3D_example1](assets/3D_example1.png)
 
-**3D Spectra:** auto peak picking and plane detection
-![3D_example2](assets/3D_example2.png)
-
-**file info:** NMRpipe "showhdr" style file information
-![file_info](assets/fileinfo.png)
-
-
+![3D_example](assets/3D_example.png)
