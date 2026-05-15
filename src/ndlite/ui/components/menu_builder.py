@@ -1,3 +1,5 @@
+import sys
+import os
 from PyQt6.QtGui import QAction
 
 class MenuBuilder:
@@ -80,6 +82,12 @@ class MenuBuilder:
         export_menu.addAction(export_peaks_action)
 
         file_menu.addSeparator()
+
+        if sys.platform == "darwin" and ".app" in sys.executable:
+            install_cli_action = QAction("Install command line version", self.mw)
+            install_cli_action.triggered.connect(self.mw.io_controller.install_cli)
+            file_menu.addAction(install_cli_action)
+            file_menu.addSeparator()
 
         quit_action = QAction("Quit", self.mw)
         quit_action.setShortcut("Ctrl+Q")

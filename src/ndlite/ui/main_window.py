@@ -22,7 +22,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QScrollArea, QColorDialog, QCheckBox, QMessageBox, QDialog,
                              QTableWidget, QTableWidgetItem, QHeaderView, QDialogButtonBox)
 
-from PyQt6.QtCore import Qt, QTimer, qInstallMessageHandler, QtMsgType
+from PyQt6.QtCore import Qt, QTimer, qInstallMessageHandler, QtMsgType, QEvent
 
 from ndlite.ui.plot_widget import TrackpadPlotWidget
 from ndlite.ui.dialogs import HelpDialog
@@ -222,7 +222,6 @@ class NMRViewerApp(QMainWindow):
             self.io_controller.load_files(file_paths)
  
         QTimer.singleShot(2000, self.updater.silent_update_check)       
-        
         
 #---------------------------------------------------------------------        
 

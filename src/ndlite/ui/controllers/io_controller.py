@@ -5,6 +5,8 @@ import pyqtgraph as pg
 import nmrglue as ng
 import numpy as np
 import os
+import subprocess
+import tempfile
 from pathlib import Path
 import json
 from ndlite.core.models.spectrum_model import SpectrumModel
@@ -185,6 +187,72 @@ class IOController:
     def open_settings_dialog(self):
         dlg = SettingsDialog(self.mw.prefs, self.mw.prefs_file, self.mw)
         dlg.exec()
+
+    def install_cli(self):
+        import sys
+        if sys.platform != "darwin":
+            return
+
+        source_path = sys.executable
+        target_path = "/usr/local/bin/ndlite"
+        
+        # Verify we are in a .app bundle
+        if ".app" in source_path:
+             app_dir = source_path.split(".app")[0] + ".app"
+             potential_bin = os.path.join(app_dir, "Contents", "MacOS", "ndlite")
+             if os.path.exists(potential_bin):
+                 source_path = potential_bin
+        else:
+             # Fallback to the user suggested path if we are not sure but on darwin
+             source_path = "/Applications/ndlite.app/Contents/MacOS/ndlite"
+             if not os.path.exists(source_path):
+                 QMessageBox.warning(self.mw, "CLI Installation", "This feature is only available when running ndlite as a macOS Application bundle.")
+                 return
+
+        # Create a shell script wrapper instead of a symlink
+        # This ensures the binary can find its Info.plist relative to its real location.
+        # We use a python one-liner to normalize all file paths to absolute paths
+        # before passing them to the app.
+        wrapper_content = f"""#!/bin/bash
+# Normalize all arguments that are files to absolute paths
+declare -a ABS_ARGS
+for arg in "$@"; do
+    if [[ -f "$arg" ]]; then
+        ABS_ARGS+=("$(python3 -c 'import os, sys; print(os.path.abspath(sys.argv[1]))' "$arg")")
+    else
+        ABS_ARGS+=("$arg")
+    fi
+done
+exec "{source_path}" "${{ABS_ARGS[@]}}"
+"""
+        
+        fd, temp_path = tempfile.mkstemp()
+        try:
+            with os.fdopen(fd, 'w') as f:
+                f.write(wrapper_content)
+            
+            # Use AppleScript to move and set permissions
+            # We use 'quoted form of' for the temp_path to handle spaces
+            script = (
+                f'do shell script "mkdir -p /usr/local/bin && '
+                f'cp " & quoted form of "{temp_path}" & " {target_path} && '
+                f'chmod 755 {target_path}" '
+                f'with administrator privileges'
+            )
+            cmd = ["osascript", "-e", script]
+
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode == 0:
+                QMessageBox.information(self.mw, "CLI Installation", f"Successfully installed 'ndlite' to {target_path}.\n\nYou can now run 'ndlite' from the terminal.")
+            else:
+                if "User canceled" in result.stderr:
+                    return
+                QMessageBox.critical(self.mw, "CLI Installation", f"Failed to install command line version:\n{result.stderr}")
+        except Exception as e:
+            QMessageBox.critical(self.mw, "CLI Installation", f"An error occurred:\n{str(e)}")
+        finally:
+            if os.path.exists(temp_path):
+                os.remove(temp_path)
 
     def show_spectrum_info(self):
         if not self.mw.raw_data_list or not self.mw.dic_list:
