@@ -10,14 +10,14 @@ class HelpDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("NMRdraw_lite Shortcuts")
+        self.setWindowTitle("ndlite Shortcuts")
         self.setFixedSize(600, 450) 
         
         layout = QVBoxLayout(self)
         
         help_text = """
         <div style='font-size: 12px; line-height: 1.4;'>
-            <h3>NMRdraw_lite Shortcuts</h3>
+            <h3>ndlite Shortcuts</h3>
             <table width="100%">
                 <tr><td width="120"><b>h</b></td><td>Show this help message</td></tr>
                 <tr><td><b>p</b></td><td>Pick Peaks mode (Click near a peak to snap)</td></tr>

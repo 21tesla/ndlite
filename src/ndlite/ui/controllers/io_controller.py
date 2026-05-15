@@ -147,9 +147,9 @@ class IOController:
     def load_preferences(self):
         
         # Store preferences in an OS-appropriate user directory
-        app_dir = Path.home() / ".nmrdraw_lite"
+        app_dir = Path.home() / ".ndlite"
         app_dir.mkdir(parents=True, exist_ok=True)
-        self.mw.prefs_file = str(app_dir / "nmrdraw_preferences.json")
+        self.mw.prefs_file = str(app_dir / "ndlite_preferences.json")
 
         
         self.mw.prefs = {

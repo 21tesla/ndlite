@@ -163,7 +163,7 @@ class SettingsDialog(QDialog):
 class NMRViewerApp(QMainWindow):
     def __init__(self, file_paths=None):
         super().__init__()
-        self.setWindowTitle("NMRdraw_lite")
+        self.setWindowTitle("ndlite")
         self.resize(1400, 1000)
 
         self.dic_list = []

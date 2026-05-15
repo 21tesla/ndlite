@@ -7,7 +7,7 @@ import certifi
 
 GLOBAL_SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
 
-VERSION = "0.4.0"
+VERSION = "0.5.0"
 
 class Updater:
     def __init__(self, main_window):
@@ -18,7 +18,7 @@ class Updater:
     def _get_latest_release(self):
         """Helper to fetch latest release info from GitHub."""
         url = f"https://api.github.com/repos/{self.repo}/releases/latest"
-        req = urllib.request.Request(url, headers={'User-Agent': 'NMRdraw_lite-App'})
+        req = urllib.request.Request(url, headers={'User-Agent': 'ndlite-App'})
         with urllib.request.urlopen(req, context=GLOBAL_SSL_CONTEXT, timeout=3) as response:
             data = json.loads(response.read().decode())
             return {
@@ -31,7 +31,7 @@ class Updater:
         reply = QMessageBox.question(
             self.main_window, 
             "Update Available",
-            f"A new version of NMRdraw_lite ({latest_version}) is available!\n"
+            f"A new version of ndlite ({latest_version}) is available!\n"
             f"You are currently running version {self.version}.\n\n"
             f"Would you like to open your browser to download it?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
