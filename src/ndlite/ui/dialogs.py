@@ -28,6 +28,7 @@ class HelpDialog(QDialog):
                 <tr><td><b>Shift + H</b></td><td>Hide Peaks</td></tr>
                 <tr><td><b>s</b></td><td>Save peak list to file</td></tr>
                 <tr><td><b>x, y, z</b></td><td>Phase along respective axis</td></tr>
+                <tr><td><b>f</b></td><td>Flip x,y axes</td></tr>                
                 <tr><td><b>Esc</b></td><td>Exit current mode / return to default</td></tr>
             </table>
             <hr>
