@@ -37,7 +37,7 @@ Thank you to **Dr. Frank Delagio** (IBBR / U Maryland) for the original NMRdraw 
 **2D Spectra:** auto and manual peak picking
 ![2D_example1](assets/2D_example1.png)
 
-**3D Spectra:** fast scrolling through planes
+**3D Spectra:** dynamic phasing in x,y,z 
 ![3D_example1](assets/3D_example1.png)
 
 **3D Spectra:** auto peak picking and plane detection
