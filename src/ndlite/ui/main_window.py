@@ -645,6 +645,64 @@ class NMRViewerApp(QMainWindow):
                 self.vline.setVisible(False)
                 self.plot_2d.setTitle("Please load a file.")
 
+    def flip_axes(self):
+        if self.raw_data is None or self.raw_data.ndim < 2:
+            return
+
+        # Swap dimensions
+        self.x_dim, self.y_dim = self.y_dim, self.x_dim
+        
+        # Swap PPM scales and limits
+        self.ppm_x, self.ppm_y = self.ppm_y, self.ppm_x
+        self.lim_x, self.lim_y = self.lim_y, self.lim_x
+        
+        # Swap labels
+        self.label_x, self.label_y = self.label_y, self.label_x
+        
+        # Swap crosshair positions
+        self.h_pos, self.v_pos = self.v_pos, self.h_pos
+        self.hline.setPos(self.h_pos)
+        self.vline.setPos(self.v_pos)
+        
+        # Swap phase states
+        self.phase_state['x'], self.phase_state['y'] = self.phase_state['y'], self.phase_state['x']
+        
+        # Toggle slice_x_idx
+        self.slice_x_idx = 1 - self.slice_x_idx
+        
+        # Swap peak coordinates
+        for p in self.peak_manager.picked_peaks:
+            p['ppm_x'], p['ppm_y'] = p['ppm_y'], p['ppm_x']
+            
+        # Update plot labels
+        self.plot_2d.setLabel('bottom', self.label_x, units="ppm")
+        self.plot_2d.setLabel('left', self.label_y, units="ppm")
+        
+        # Update UI if in phasing mode
+        if self.current_mode in ['x_phase', 'y_phase']:
+            self.update_phase_ui_from_state()
+            
+        # Update plot ranges
+        if self.lim_x is not None and self.lim_y is not None:
+            self.plot_2d.setXRange(float(self.lim_x[0]), float(self.lim_x[1]), padding=0)
+            self.plot_2d.setYRange(float(self.lim_y[0]), float(self.lim_y[1]), padding=0)
+
+        # Force clear of cached view transforms to fix disappearing spectrum
+        for group in self.file_groups:
+            if group is not None:
+                group.setTransform(QTransform())
+
+        # Recompute everything
+        self.recompute_contours()
+        self.peak_controller.update_peak_markers()
+        
+        # Update title
+        if self.current_mode is None:
+            if self.raw_data.ndim == 2:
+                self.plot_2d.setTitle(f"{self.label_x}={self.v_pos:.3f}, {self.label_y}={self.h_pos:.3f} | Press 'x' or 'y' to phase. | 'h' for help")
+            else:
+                self.plot_2d.setTitle(f"{self.label_x}={self.v_pos:.3f}, {self.label_y}={self.h_pos:.3f} | Press 'x', 'y', 'z' to phase. | 'h' for help")
+
     def _check_1d_baseline_validity(self):
         if not self.enabled_indices:
             QMessageBox.warning(self, "No Data", "Please load a spectrum first.")
@@ -804,6 +862,10 @@ class NMRViewerApp(QMainWindow):
 
         if text == 'd':
             self.set_mode('peak_delete')
+            return
+
+        if text == 'f':
+            self.flip_axes()
             return
 
         if text == 'h':

@@ -182,6 +182,8 @@ class PeakController:
                 text_item.setPos(p['ppm_x'], p['ppm_y'])
                 self.mw.plot_2d.addItem(text_item)
                 self.mw.peak_text_items[pid] = text_item
+            else:
+                self.mw.peak_text_items[pid].setPos(p['ppm_x'], p['ppm_y'])
 
         self.mw.peaks_scatter.setData(spots)
 

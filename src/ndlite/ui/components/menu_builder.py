@@ -54,6 +54,11 @@ class MenuBuilder:
         spectrum_info_action.triggered.connect(self.mw.io_controller.show_spectrum_info)
         file_menu.addAction(spectrum_info_action)
 
+        flip_axes_action = QAction("Flip Axes", self.mw)
+        flip_axes_action.setShortcut("f")
+        flip_axes_action.triggered.connect(self.mw.flip_axes)
+        file_menu.addAction(flip_axes_action)
+
         file_menu.addSeparator()
         
         settings_action = QAction("Settings...", self.mw)
