@@ -44,4 +44,4 @@ dev = [
 ]
 
 [project.scripts]
-ldgraph = "ndlite.main:main"
+ndlite = "ndlite.main:main"
