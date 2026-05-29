@@ -52,6 +52,13 @@ class MenuBuilder:
         load_action.triggered.connect(self.mw.io_controller.load_file_dialog)
         file_menu.addAction(load_action)
 
+        self.add_spectrum_action = QAction("Add Spectrum...", self.mw)
+        self.add_spectrum_action.triggered.connect(self.mw.io_controller.add_file_dialog)
+        self.add_spectrum_action.setEnabled(False)
+        file_menu.addAction(self.add_spectrum_action)
+
+        file_menu.addSeparator()
+
         spectrum_info_action = QAction("Spectrum Info", self.mw)
         spectrum_info_action.triggered.connect(self.mw.io_controller.show_spectrum_info)
         file_menu.addAction(spectrum_info_action)

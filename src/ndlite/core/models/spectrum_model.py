@@ -6,6 +6,7 @@ class SpectrumModel:
         self.color_pos = color_pos
         self.color_neg = color_neg
         self.enabled = True
+        self.peaks_enabled = True
         self.baseline_correction = None
 
         # Determine dimensionality

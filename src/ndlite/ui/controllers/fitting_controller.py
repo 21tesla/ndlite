@@ -12,20 +12,22 @@ class FittingController:
         if not self.main_window._check_1d_baseline_validity():
             return
             
-        if not self.main_window.peak_manager.picked_peaks:
+        active_idx = self.main_window.active_index
+        peak_manager = self.main_window.peak_managers[active_idx]
+        
+        if not peak_manager.picked_peaks:
             return
 
         self.clear_1d_fits()
             
-        orig_i = self.main_window.enabled_indices[0]
-        y_data = self.main_window.vis_data_dict.get(orig_i) 
+        y_data = self.main_window.vis_data_dict.get(active_idx) 
         if y_data is None: return
         x_data = self.main_window.ppm_x
         
         ppm_step = np.abs(x_data[0] - x_data[1]) if len(x_data) > 1 else 1.0
         
         # Sort peaks by ppm to ensure consistent ordering
-        peaks = sorted(self.main_window.peak_manager.picked_peaks, key=lambda p: p['ppm_x'])
+        peaks = sorted(peak_manager.picked_peaks, key=lambda p: p['ppm_x'])
         num_peaks = len(peaks)
         
         # 1. Define global fitting region
@@ -132,12 +134,18 @@ class FittingController:
             self.main_window.plot_2d.removeItem(curve)
         self.fit_curves = []
         
-        orig_i = self.main_window.enabled_indices[0]
+        active_idx = self.main_window.active_index
         offset_val = self.main_window.cont_sliders['offset'].value()
         base_max = np.max(np.abs(self.main_window.current_slice_list[0])) if self.main_window.current_slice_list else 1.0
-        y_offset = (self.main_window.enabled_indices.index(orig_i) * offset_val * (base_max * 0.1))
+        
+        # Find position of active_idx in enabled_indices
+        if active_idx not in self.main_window.enabled_indices:
+            return # Don't draw fits if spectrum is hidden
+            
+        y_offset = (self.main_window.enabled_indices.index(active_idx) * offset_val * (base_max * 0.1))
 
-        for p in self.main_window.peak_manager.picked_peaks:
+        peak_manager = self.main_window.peak_managers[active_idx]
+        for p in peak_manager.picked_peaks:
             if p.get('fit_type') in ['lorentzian', 'gaussian', 'pseudo_voigt']:
                 window_pts = 30
                 idx_center = np.argmin(np.abs(self.main_window.ppm_x - p['fit_cen']))
@@ -162,8 +170,10 @@ class FittingController:
             self.main_window.plot_2d.removeItem(curve)
         self.fit_curves = []
         
-        if hasattr(self.main_window, 'peak_manager') and self.main_window.peak_manager.picked_peaks:
-            for p in self.main_window.peak_manager.picked_peaks:
+        active_idx = self.main_window.active_index
+        peak_manager = self.main_window.peak_managers[active_idx]
+        if peak_manager.picked_peaks:
+            for p in peak_manager.picked_peaks:
                 keys_to_remove = ['fit_type', 'fit_amp', 'fit_cen', 'fit_wid', 'fit_eta', 'fit_area']
                 for k in keys_to_remove:
                     p.pop(k, None)

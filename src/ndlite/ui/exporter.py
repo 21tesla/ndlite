@@ -19,12 +19,18 @@ class Exporter:
     def _export_with_mode(self, mode):
         self.main_window.is_exporting = True
         
+        # Save visibility of peak elements for all spectra
+        scatter_vis = {idx: scatter.isVisible() for idx, scatter in self.main_window.peak_scatter_items.items()}
+        text_vis = {}
+        for idx, items in self.main_window.peak_text_items.items():
+            text_vis[idx] = {pid: item.isVisible() for pid, item in items.items()}
+
         self._export_state = {
             'hline': self.main_window.hline.isVisible(),
             'vline': self.main_window.vline.isVisible(),
             'trace': self.main_window.trace_curve.isVisible(),
-            'scatter': self.main_window.peaks_scatter.isVisible(),
-            'texts': {pid: item.isVisible() for pid, item in self.main_window.peak_text_items.items()}
+            'scatter': scatter_vis,
+            'texts': text_vis
         }
         
         self.main_window.hline.setVisible(False)
@@ -33,9 +39,15 @@ class Exporter:
         self.main_window.plot_2d.setTitle(" ")
         
         if mode == 'spectrum':
-            self.main_window.peak_controller.hide_peaks()
+            # Hide all peaks
+            for scatter in self.main_window.peak_scatter_items.values():
+                scatter.setVisible(False)
+            for items in self.main_window.peak_text_items.values():
+                for item in items.values():
+                    item.setVisible(False)
         elif mode == 'peaks':
-            self.main_window.peak_controller.show_peaks()
+            # Peaks are already shown based on their visibility flags
+            pass
                 
         scene = self.main_window.plot_2d.scene()
         scene.contextMenuItem = self.main_window.plot_2d.getPlotItem()
@@ -67,10 +79,15 @@ class Exporter:
             self.main_window.hline.setVisible(self._export_state.get('hline', False))
             self.main_window.vline.setVisible(self._export_state.get('vline', False))
             self.main_window.trace_curve.setVisible(self._export_state.get('trace', False))
-            self.main_window.peaks_scatter.setVisible(self._export_state.get('scatter', True))
             
-            for pid, item in self.main_window.peak_text_items.items():
-                if pid in self._export_state['texts']:
-                    item.setVisible(self._export_state['texts'][pid])
+            scatter_vis = self._export_state.get('scatter', {})
+            for idx, scatter in self.main_window.peak_scatter_items.items():
+                scatter.setVisible(scatter_vis.get(idx, False))
+                
+            text_vis = self._export_state.get('texts', {})
+            for idx, items in self.main_window.peak_text_items.items():
+                if idx in text_vis:
+                    for pid, item in items.items():
+                        item.setVisible(text_vis[idx].get(pid, False))
                 
         self.main_window.set_mode(self.main_window.current_mode)

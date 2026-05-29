@@ -8,12 +8,12 @@ class BaselineController:
     def run_als_baseline(self):
         if not self.main_window._check_1d_baseline_validity(): return
         
-        orig_i = self.main_window.enabled_indices[0]
-        data_1d = self.main_window.raw_data_list[orig_i]
+        active_idx = self.main_window.active_index
+        data_1d = self.main_window.raw_data_list[active_idx]
         
         baseline = self.main_window.data_handler.baseline_als(np.real(data_1d))
         
-        self.main_window.baseline_corrections[orig_i] = baseline
+        self.main_window.baseline_corrections[active_idx] = baseline
         
         self.main_window.recompute_contours()
         self.main_window.plot_2d.setTitle("Success: ALS Baseline correction applied.")
@@ -36,9 +36,9 @@ class BaselineController:
     def clear_baseline(self):
         if not self.main_window._check_1d_baseline_validity(): return
         
-        orig_i = self.main_window.enabled_indices[0]
-        if hasattr(self.main_window, 'baseline_corrections') and self.main_window.baseline_corrections[orig_i] is not None:
-            self.main_window.baseline_corrections[orig_i] = None
+        active_idx = self.main_window.active_index
+        if hasattr(self.main_window, 'baseline_corrections') and self.main_window.baseline_corrections[active_idx] is not None:
+            self.main_window.baseline_corrections[active_idx] = None
             self.main_window.recompute_contours()
             self.main_window.plot_2d.setTitle("Success: Baseline correction cleared.")
         else:

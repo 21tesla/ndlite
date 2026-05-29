@@ -168,12 +168,16 @@ class NMRViewerApp(QMainWindow):
 
         self.dic_list = []
         self.raw_data_list = []
+        self.file_paths_list = []
         self.current_slice_list = []
         self.spectrum_colors = []
         self.file_enabled_flags = []
+        self.peak_enabled_flags = []
         self.enabled_indices = []
-
-        self.dic = None
+        self.active_index = 0
+        self.peak_managers = []
+        self.peak_scatter_items = [] # List of ScatterPlotItems
+        self.peak_text_items = [] # List of dicts: {pid -> TextItem}
         self.raw_data = None
         self.current_slice = None
 
@@ -206,7 +210,6 @@ class NMRViewerApp(QMainWindow):
         self.io_controller = IOController(self)
         self.io_controller.load_preferences()
 
-        self.peak_manager = PeakManager()
         self.exporter = Exporter(self)
         self.updater = Updater(self)
         self.fitting_controller = FittingController(self)
@@ -215,6 +218,9 @@ class NMRViewerApp(QMainWindow):
         self.data_handler = DataHandler()
 
         self.init_ui()
+        self.data_list_widget.selection_changed.connect(self.io_controller.on_selection_changed)
+        self.data_list_widget.peak_toggle_requested.connect(self.io_controller.on_peak_toggled)
+
         self.menu_builder = MenuBuilder(self)
         self.menu_builder.build()
         
@@ -243,6 +249,7 @@ class NMRViewerApp(QMainWindow):
         # Data List
         v_file = QVBoxLayout()
         self.data_list_widget = DataListWidget()
+        self.data_list_widget.remove_requested.connect(self.io_controller.remove_spectrum)
         v_file.addWidget(self.data_list_widget)
 
         # Z-Plane Controls
@@ -525,9 +532,7 @@ class NMRViewerApp(QMainWindow):
         self.plot_2d.addItem(self.threshold_line) # Add to plot
         self.plot_2d.addItem(self.trace_curve)
 
-        self.peaks_scatter = pg.ScatterPlotItem(size=10, pen=pg.mkPen('k'), brush=pg.mkBrush(255, 0, 0, 150))
-        self.plot_2d.addItem(self.peaks_scatter)
-        self.peak_text_items = {}
+        self.peak_text_items = {} # index -> {pid -> item}
         
         self.hline.setVisible(False)
         self.vline.setVisible(False)
@@ -669,9 +674,10 @@ class NMRViewerApp(QMainWindow):
         # Toggle slice_x_idx
         self.slice_x_idx = 1 - self.slice_x_idx
         
-        # Swap peak coordinates
-        for p in self.peak_manager.picked_peaks:
-            p['ppm_x'], p['ppm_y'] = p['ppm_y'], p['ppm_x']
+        # Swap peak coordinates for all spectra
+        for pm in self.peak_managers:
+            for p in pm.picked_peaks:
+                p['ppm_x'], p['ppm_y'] = p['ppm_y'], p['ppm_x']
             
         # Update plot labels
         self.plot_2d.setLabel('bottom', self.label_x, units="ppm")
@@ -703,14 +709,14 @@ class NMRViewerApp(QMainWindow):
                 self.plot_2d.setTitle(f"{self.label_x}={self.v_pos:.3f}, {self.label_y}={self.h_pos:.3f} | Press 'x', 'y', 'z' to phase. | 'h' for help")
 
     def _check_1d_baseline_validity(self):
-        if not self.enabled_indices:
+        active_idx = self.active_index
+        if active_idx >= len(self.raw_data_list):
             QMessageBox.warning(self, "No Data", "Please load a spectrum first.")
             return False
             
-        orig_i = self.enabled_indices[0]
-        vis_data = self.vis_data_dict.get(orig_i)
+        vis_data = self.vis_data_dict.get(active_idx)
         
-        if vis_data is None or self.raw_data_list[orig_i].ndim != 1:
+        if vis_data is None or self.raw_data_list[active_idx].ndim != 1:
             QMessageBox.warning(self, "1D Only", "This feature is currently only supported for 1D spectra.")
             return False
             
@@ -780,18 +786,20 @@ class NMRViewerApp(QMainWindow):
                     if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
                         self.peak_controller.force_pick(click_ppm_x, click_ppm_y)
                     else:
+                        active_idx = self.active_index
                         current_z_idx = self.slider_z.value() - 1 if hasattr(self, 'nz') and self.nz > 1 else None
-                        if self.enabled_indices and hasattr(self, 'vis_data_dict'):
-                            orig_i = self.enabled_indices[0]
-                            vis_data = self.vis_data_dict.get(orig_i)
+                        if active_idx < len(self.raw_data_list) and hasattr(self, 'vis_data_dict'):
+                            vis_data = self.vis_data_dict.get(active_idx)
+                            raw_data = self.raw_data_list[active_idx]
 
                             base_mult = self.cont_sliders['base'].value()
                             noise_rmsd = self.data_handler.calculate_rmsd(vis_data)
                             threshold = noise_rmsd * base_mult
 
-                            data_to_pass = self.raw_data if self.raw_data.ndim == 3 else vis_data
+                            data_to_pass = raw_data if raw_data.ndim == 3 else vis_data
 
-                            self.peak_manager.refine_peak(
+                            peak_manager = self.peak_managers[active_idx]
+                            peak_manager.refine_peak(
                                 click_ppm_x, click_ppm_y, 
                                 data_to_pass, self.ppm_x, self.ppm_y, threshold,
                                 click_z_idx=current_z_idx, ppm_z=getattr(self, 'ppm_z', None)
@@ -803,7 +811,8 @@ class NMRViewerApp(QMainWindow):
                     dx_scale = max(abs(x_range[1] - x_range[0]), 1e-6)
                     dy_scale = max(abs(y_range[1] - y_range[0]), 1e-6)
                             
-                    self.peak_manager.delete_nearest_peak(click_ppm_x, click_ppm_y, dx_scale, dy_scale)
+                    active_pm = self.peak_managers[self.active_index]
+                    active_pm.delete_nearest_peak(click_ppm_x, click_ppm_y, dx_scale, dy_scale)
                     self.peak_controller.update_peak_markers()
                     
                 elif self.current_mode == 'baseline_interactive':
@@ -909,20 +918,32 @@ class NMRViewerApp(QMainWindow):
         self.current_slice_list = []
         self.enabled_indices = []
         
+        active_slice = None
+        
         for i in range(len(self.raw_data_list)):
             if self.file_enabled_flags[i]:
                 self.enabled_indices.append(i)
                 data = self.raw_data_list[i]
                 
+                slice_data = None
                 if self.nz > 1 and data.ndim == 3:
                     z_idx = (self.slider_z.value() - 1) if hasattr(self, 'slider_z') and self.nz > 1 else 0
                     slices = [slice(None)] * 3
                     slices[self.z_dim] = z_idx
-                    self.current_slice_list.append(data[tuple(slices)])
+                    slice_data = data[tuple(slices)]
                 elif data.ndim in (1, 2):
-                    self.current_slice_list.append(data)
+                    slice_data = data
+                
+                if slice_data is not None:
+                    self.current_slice_list.append(slice_data)
+                    if i == self.active_index:
+                        active_slice = slice_data
                     
-        self.current_slice = next(iter(self.current_slice_list), None) if self.current_slice_list else None
+        # Prioritize active spectrum for phasing and trace logic
+        if active_slice is not None:
+            self.current_slice = active_slice
+        else:
+            self.current_slice = next(iter(self.current_slice_list), None) if self.current_slice_list else None
         
         
 #---------------------------------------------------------------------        

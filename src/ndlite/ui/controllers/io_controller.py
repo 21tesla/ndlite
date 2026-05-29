@@ -12,6 +12,8 @@ import json
 from ndlite.core.models.spectrum_model import SpectrumModel
 from ndlite.ui.dialogs import SettingsDialog
 
+from ndlite.core.peak_manager import PeakManager
+
 class SpectrumInfoDialog(QDialog):
     def __init__(self, io_controller, parent=None):
         super().__init__(parent)
@@ -23,12 +25,8 @@ class SpectrumInfoDialog(QDialog):
         
         self.combo_box = QComboBox()
         for i in range(len(self.io_controller.mw.raw_data_list)):
-            model_name = "Unknown"
-            item = self.io_controller.mw.data_list_widget.file_layout.itemAt(i)
-            if item and item.widget():
-                lbl = item.widget().findChild(QLabel)
-                if lbl:
-                    model_name = lbl.text()
+            file_path = self.io_controller.mw.file_paths_list[i]
+            model_name = os.path.basename(file_path)
             self.combo_box.addItem(model_name, userData=i)
             
         self.combo_box.currentIndexChanged.connect(self.update_info)
@@ -267,6 +265,180 @@ exec "{source_path}" "${{ABS_ARGS[@]}}"
         if file_names:
             self.load_files(file_names)
 
+    def add_file_dialog(self):
+        file_names, _ = QFileDialog.getOpenFileNames(self.mw, "Add NMRPipe File(s)", "", "NMRPipe (*.ft *.ft1 *.ft2 *.ft3)")
+        if file_names:
+            self.add_files(file_names)
+
+    def on_selection_changed(self, index):
+        if 0 <= index < len(self.mw.raw_data_list):
+            self.mw.active_index = index
+            # Potentially update plot title or other UI elements to reflect active spectrum
+            self.mw.plot_2d.setTitle(f"Active: {os.path.basename(self.mw.file_paths_list[index])}")
+
+    def on_peak_toggled(self, index, enabled):
+        if 0 <= index < len(self.mw.peak_enabled_flags):
+            self.mw.peak_enabled_flags[index] = enabled
+            self.mw.peak_controller.update_peak_markers()
+
+    def remove_spectrum(self, index):
+        if not (0 <= index < len(self.mw.raw_data_list)):
+            return
+            
+        reply = QMessageBox.question(self.mw, 'Delete Spectrum', 
+                                   f"Are you sure you want to remove this spectrum?",
+                                   QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No, 
+                                   QMessageBox.StandardButton.No)
+        if reply == QMessageBox.StandardButton.No:
+            return
+
+        # 1. Remove plot items
+        if self.mw.file_groups[index] is not None:
+            self.mw.plot_2d.removeItem(self.mw.file_groups[index])
+        if self.mw.file_curves_1d[index] is not None:
+            self.mw.plot_2d.removeItem(self.mw.file_curves_1d[index])
+            
+        if index < len(self.mw.peak_scatter_items) and self.mw.peak_scatter_items[index] is not None:
+            self.mw.plot_2d.removeItem(self.mw.peak_scatter_items[index])
+            for text_item in self.mw.peak_text_items[index].values():
+                self.mw.plot_2d.removeItem(text_item)
+
+        # 2. Pop from all lists
+        self.mw.dic_list.pop(index)
+        self.mw.raw_data_list.pop(index)
+        self.mw.file_paths_list.pop(index)
+        self.mw.spectrum_colors.pop(index)
+        self.mw.file_enabled_flags.pop(index)
+        self.mw.peak_enabled_flags.pop(index)
+        self.mw.baseline_corrections.pop(index)
+        self.mw.file_groups.pop(index)
+        self.mw.file_pools_2d.pop(index)
+        self.mw.file_curves_1d.pop(index)
+        self.mw.peak_managers.pop(index)
+        self.mw.peak_scatter_items.pop(index)
+        self.mw.peak_text_items.pop(index)
+        
+        # 3. Update active pointers
+        if not self.mw.raw_data_list:
+            self.mw.dic = None
+            self.mw.raw_data = None
+            self.mw.current_slice = None
+            self.mw.current_slice_list = []
+            self.mw.enabled_indices = []
+            self.mw.active_index = 0
+            if hasattr(self.mw, 'menu_builder') and self.mw.menu_builder.add_spectrum_action:
+                self.mw.menu_builder.add_spectrum_action.setEnabled(False)
+            self.mw.plot_2d.setTitle("Please load a file.")
+        else:
+            self.mw.active_index = min(self.mw.active_index, len(self.mw.raw_data_list) - 1)
+            self.mw.dic = self.mw.dic_list[0]
+            self.mw.raw_data = self.mw.raw_data_list[0]
+            
+        # 4. Refresh the UI list (to fix closure indices)
+        self.refresh_data_list()
+        
+        # 5. Recompute and update
+        self.mw._update_enabled_state()
+        self.mw.recompute_contours()
+        self.mw.peak_controller.update_peak_markers()
+
+    def refresh_data_list(self):
+        self.mw.data_list_widget.clear()
+        
+        for i in range(len(self.mw.raw_data_list)):
+            file_name = self.mw.file_paths_list[i]
+            dic = self.mw.dic_list[i]
+            data = self.mw.raw_data_list[i]
+            c_pos, c_neg = self.mw.spectrum_colors[i]
+            
+            model = SpectrumModel(file_name, dic, data, c_pos, c_neg)
+            model.enabled = self.mw.file_enabled_flags[i]
+            model.peaks_enabled = self.mw.peak_enabled_flags[i]
+
+            def create_callbacks(idx, m):
+                toggle_cb = lambda state: self.mw.on_file_toggled(idx, state)
+                peak_toggle_cb = lambda state: self.on_peak_toggled(idx, state)
+                def color_cb():
+                    self.mw.spectrum_colors[idx] = [m.color_pos, m.color_neg]
+                    self.mw.recompute_contours()
+                return toggle_cb, color_cb, peak_toggle_cb
+
+            t_cb, c_cb, p_t_cb = create_callbacks(i, model)
+            self.mw.data_list_widget.add_spectrum(model, t_cb, c_cb, p_t_cb)
+        
+        self.mw.data_list_widget.list_widget.setCurrentRow(self.mw.active_index)
+
+    def add_files(self, file_names):
+        if not file_names or not self.mw.raw_data_list:
+            return
+
+        current_ndim = self.mw.raw_data.ndim
+        start_idx = len(self.mw.raw_data_list)
+        
+        default_colors = [
+            ('#0000FF', '#FF0000'),
+            ('#008000', '#FF00FF'),
+            ('#00FFFF', '#FFA500'),
+            ('#800080', '#FFFF00'),
+            ('#000000', '#888888')
+        ]
+
+        try:
+            for i, file_name in enumerate(file_names):
+                dic, data = self.mw.data_handler.load_file(file_name)
+                
+                if data.ndim != current_ndim:
+                    QMessageBox.warning(self.mw, "Dimension Mismatch", f"Skipping {file_name}: Expected {current_ndim}D, got {data.ndim}D.")
+                    continue
+
+                self.mw.dic_list.append(dic)
+                self.mw.raw_data_list.append(data)
+                self.mw.file_paths_list.append(file_name)
+                self.mw.file_enabled_flags.append(True)
+                self.mw.peak_enabled_flags.append(True)
+                self.mw.baseline_corrections.append(None)
+                self.mw.peak_managers.append(PeakManager())
+                self.mw.peak_scatter_items.append(None) # Will be created by update_peak_markers
+                self.mw.peak_text_items.append({})
+                
+                c_idx = start_idx + i
+                c_pos, c_neg = default_colors[c_idx % len(default_colors)]
+                self.mw.spectrum_colors.append([c_pos, c_neg])
+
+                model = SpectrumModel(file_name, dic, data, c_pos, c_neg)
+
+                # Use a factory function to capture c_idx correctly in closures
+                def create_callbacks(idx, m):
+                    toggle_cb = lambda state: self.mw.on_file_toggled(idx, state)
+                    peak_toggle_cb = lambda state: self.on_peak_toggled(idx, state)
+                    def color_cb():
+                        self.mw.spectrum_colors[idx] = [m.color_pos, m.color_neg]
+                        self.mw.recompute_contours()
+                    return toggle_cb, color_cb, peak_toggle_cb
+
+                t_cb, c_cb, p_t_cb = create_callbacks(c_idx, model)
+                self.mw.data_list_widget.add_spectrum(model, t_cb, c_cb, p_t_cb)
+
+                if current_ndim == 1:
+                    c_pos, _ = self.mw.spectrum_colors[c_idx]
+                    curve = pg.PlotDataItem(pen=pg.mkPen(c_pos, width=1))
+                    self.mw.plot_2d.addItem(curve)
+                    self.mw.file_curves_1d.append(curve)
+                    self.mw.file_groups.append(None)
+                    self.mw.file_pools_2d.append(None)
+                else:
+                    group = pg.ItemGroup()
+                    self.mw.plot_2d.addItem(group)
+                    self.mw.file_groups.append(group)
+                    self.mw.file_pools_2d.append([])
+                    self.mw.file_curves_1d.append(None)
+
+            self.mw._update_enabled_state()
+            self.mw.recompute_contours()
+            
+        except Exception as e:
+            QMessageBox.critical(self.mw, "Error Adding Data", f"An error occurred while adding files:\n{e}")
+
     def load_files(self, file_names):
         if not file_names:
             return
@@ -277,15 +449,31 @@ exec "{source_path}" "${{ABS_ARGS[@]}}"
         if hasattr(self.mw, 'file_curves_1d'):
             for c in self.mw.file_curves_1d:
                 if c is not None: self.mw.plot_2d.removeItem(c)
+        
+        if hasattr(self.mw, 'peak_scatter_items'):
+            for scatter in self.mw.peak_scatter_items:
+                if scatter is not None:
+                    self.mw.plot_2d.removeItem(scatter)
+        if hasattr(self.mw, 'peak_text_items'):
+            for text_dict in self.mw.peak_text_items:
+                for item in text_dict.values():
+                    if item is not None:
+                        self.mw.plot_2d.removeItem(item)
 
         self.mw.file_groups = []
         self.mw.file_pools_2d = []
         self.mw.file_curves_1d = []
         self.mw.dic_list = []
         self.mw.raw_data_list = []
+        self.mw.file_paths_list = []
         self.mw.spectrum_colors = []
         self.mw.file_enabled_flags = [True] * len(file_names)
+        self.mw.peak_enabled_flags = [True] * len(file_names)
         self.mw.baseline_corrections = [None] * len(file_names) 
+        self.mw.peak_managers = [PeakManager() for _ in range(len(file_names))]
+        self.mw.peak_scatter_items = []
+        self.mw.peak_text_items = []
+        self.mw.active_index = 0
 
         self.mw.data_list_widget.clear()
 
@@ -302,30 +490,34 @@ exec "{source_path}" "${{ABS_ARGS[@]}}"
                 dic, data = self.mw.data_handler.load_file(file_name)
                 self.mw.dic_list.append(dic)
                 self.mw.raw_data_list.append(data)
+                self.mw.file_paths_list.append(file_name)
                 
                 c_pos, c_neg = default_colors[i % len(default_colors)]
                 self.mw.spectrum_colors.append([c_pos, c_neg])
 
                 model = SpectrumModel(file_name, dic, data, c_pos, c_neg)
 
-                def make_toggle_cb(idx):
-                    return lambda state: self.mw.on_file_toggled(idx, state)
-                    
-                def make_color_cb(idx, m):
-                    def cb():
+                def create_callbacks(idx, m):
+                    toggle_cb = lambda state: self.mw.on_file_toggled(idx, state)
+                    peak_toggle_cb = lambda state: self.on_peak_toggled(idx, state)
+                    def color_cb():
                         self.mw.spectrum_colors[idx] = [m.color_pos, m.color_neg]
                         self.mw.recompute_contours()
-                    return cb
+                    return toggle_cb, color_cb, peak_toggle_cb
 
-                self.mw.data_list_widget.add_spectrum(
-                    model,
-                    make_toggle_cb(i),
-                    make_color_cb(i, model)
-                )
+                t_cb, c_cb, p_t_cb = create_callbacks(i, model)
+                self.mw.data_list_widget.add_spectrum(model, t_cb, c_cb, p_t_cb)
+
+            self.mw.data_list_widget.list_widget.setCurrentRow(0)
 
             self.mw.dic = self.mw.dic_list[0]
             self.mw.raw_data = self.mw.raw_data_list[0]
             ndim = self.mw.raw_data.ndim
+
+            # Enable "Add Spectrum" menu item
+            if hasattr(self.mw, 'menu_builder') and self.mw.menu_builder.add_spectrum_action:
+                self.mw.menu_builder.add_spectrum_action.setEnabled(True)
+
             order = self.mw.dic.get('FDDIMORDER', [2, 1, 3, 4])
             is_1d = (ndim == 1)
 
