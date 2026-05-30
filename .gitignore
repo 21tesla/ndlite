@@ -28,3 +28,6 @@ setup_intel_env.txt
 icons/
 *.dmg
 
+
+.gemini/
+gha-creds-*.json

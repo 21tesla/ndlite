@@ -1,4 +1,5 @@
-from PyQt6.QtCore import QTimer
+from PyQt6.QtWidgets import QFileDialog, QMessageBox
+import pyqtgraph.exporters as exporters
 
 class Exporter:
 
@@ -20,9 +21,16 @@ class Exporter:
         self.main_window.is_exporting = True
         
         # Save visibility of peak elements for all spectra
-        scatter_vis = {idx: scatter.isVisible() for idx, scatter in self.main_window.peak_scatter_items.items()}
+        # Safety check: peak_scatter_items may contain None if markers haven't been created yet
+        scatter_vis = {}
+        for idx, scatter in enumerate(self.main_window.peak_scatter_items):
+            if scatter is not None:
+                scatter_vis[idx] = scatter.isVisible()
+            else:
+                scatter_vis[idx] = False
+
         text_vis = {}
-        for idx, items in self.main_window.peak_text_items.items():
+        for idx, items in enumerate(self.main_window.peak_text_items):
             text_vis[idx] = {pid: item.isVisible() for pid, item in items.items()}
 
         self._export_state = {
@@ -33,6 +41,7 @@ class Exporter:
             'texts': text_vis
         }
         
+        # Hide interactive elements for export
         self.main_window.hline.setVisible(False)
         self.main_window.vline.setVisible(False)
         self.main_window.trace_curve.setVisible(False)
@@ -40,35 +49,38 @@ class Exporter:
         
         if mode == 'spectrum':
             # Hide all peaks
-            for scatter in self.main_window.peak_scatter_items.values():
-                scatter.setVisible(False)
-            for items in self.main_window.peak_text_items.values():
+            for scatter in self.main_window.peak_scatter_items:
+                if scatter is not None:
+                    scatter.setVisible(False)
+            for items in self.main_window.peak_text_items:
                 for item in items.values():
                     item.setVisible(False)
         elif mode == 'peaks':
             # Peaks are already shown based on their visibility flags
             pass
                 
-        scene = self.main_window.plot_2d.scene()
-        scene.contextMenuItem = self.main_window.plot_2d.getPlotItem()
-        scene.showExportDialog()
-        
-        if not hasattr(self, 'export_poll_timer'):
-            self.export_poll_timer = QTimer(self.main_window)
-            self.export_poll_timer.timeout.connect(self._check_export_dialog_closed)
-        self.export_poll_timer.start(200)
+        # Use a standard QFileDialog instead of the finicky pyqtgraph export dialog
+        file_filter = "PNG Image (*.png);;SVG Vector Graphics (*.svg);;CSV Data (*.csv);;All Files (*)"
+        file_path, selected_filter = QFileDialog.getSaveFileName(
+            self.main_window, "Export Spectrum", "", file_filter
+        )
 
-#---------------------------------------------------------------------------------------
+        if file_path:
+            try:
+                plot_item = self.main_window.plot_2d.getPlotItem()
+                if "SVG" in selected_filter:
+                    exporter = exporters.SVGExporter(plot_item)
+                elif "CSV" in selected_filter:
+                    exporter = exporters.CSVExporter(plot_item)
+                else:
+                    exporter = exporters.ImageExporter(plot_item)
+                
+                exporter.export(file_path)
+            except Exception as e:
+                QMessageBox.critical(self.main_window, "Export Error", f"Failed to export: {str(e)}")
 
-    def _check_export_dialog_closed(self):
-        try:
-            scene = self.main_window.plot_2d.scene()
-            if not hasattr(scene, 'exportDialog') or scene.exportDialog is None or not scene.exportDialog.isVisible():
-                self.export_poll_timer.stop()
-                self._restore_export_state()
-        except RuntimeError:
-            self.export_poll_timer.stop()
-            self._restore_export_state()
+        # Always restore state
+        self._restore_export_state()
 
 #---------------------------------------------------------------------------------------
 
@@ -81,11 +93,12 @@ class Exporter:
             self.main_window.trace_curve.setVisible(self._export_state.get('trace', False))
             
             scatter_vis = self._export_state.get('scatter', {})
-            for idx, scatter in self.main_window.peak_scatter_items.items():
-                scatter.setVisible(scatter_vis.get(idx, False))
+            for idx, scatter in enumerate(self.main_window.peak_scatter_items):
+                if scatter is not None:
+                    scatter.setVisible(scatter_vis.get(idx, False))
                 
             text_vis = self._export_state.get('texts', {})
-            for idx, items in self.main_window.peak_text_items.items():
+            for idx, items in enumerate(self.main_window.peak_text_items):
                 if idx in text_vis:
                     for pid, item in items.items():
                         item.setVisible(text_vis[idx].get(pid, False))
