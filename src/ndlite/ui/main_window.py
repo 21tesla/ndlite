@@ -39,6 +39,10 @@ from ndlite.ui.controllers.io_controller import IOController
 from ndlite.ui.exporter import Exporter
 from ndlite.core.updater import Updater, VERSION
 from ndlite.core.models.spectrum_model import SpectrumModel
+from ndlite.core.patches import apply_pyqtgraph_patches
+
+# Apply library patches
+apply_pyqtgraph_patches()
 
 #---------------------------------------------------------------------        
 
