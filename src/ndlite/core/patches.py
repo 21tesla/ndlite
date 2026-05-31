@@ -10,23 +10,22 @@ def apply_pyqtgraph_patches():
     Applies monkeypatches to pyqtgraph to fix known bugs.
     """
     try:
-        import pyqtgraph.exporters.SVGExporter as svg_module
+        import sys
+        target_mod = None
+        
         # In some versions, 'SVGExporter' might be the class, not the module
         # due to 'from .SVGExporter import *' in exporters/__init__.py
-        
-        import sys
         if 'pyqtgraph.exporters.SVGExporter' in sys.modules:
             mod = sys.modules['pyqtgraph.exporters.SVGExporter']
             if hasattr(mod, 'correctCoordinates'):
                 target_mod = mod
-            else:
-                # Try to find where correctCoordinates is
-                import pyqtgraph.exporters as exporters
-                if hasattr(exporters, 'correctCoordinates'):
-                    target_mod = exporters
-                else:
-                    return
-        else:
+        
+        if target_mod is None:
+            import pyqtgraph.exporters as exporters
+            if hasattr(exporters, 'correctCoordinates'):
+                target_mod = exporters
+        
+        if target_mod is None:
             return
 
         def patched_correctCoordinates(node, defs, item, options):
@@ -88,10 +87,12 @@ def apply_pyqtgraph_patches():
                         vals = [1,0,0,1,0,0]
                 tr = np.array([[vals[0], vals[2], vals[4]], [vals[1], vals[3], vals[5]]])
 
+                removeTransform = False
                 for ch in grp.childNodes:
                     if not isinstance(ch, xml.Element):
                         continue
                     if ch.tagName == 'polyline':
+                        removeTransform = True
                         attr = ch.getAttribute('points').strip()
                         if not attr: continue
                         try:
@@ -102,11 +103,16 @@ def apply_pyqtgraph_patches():
                         except Exception:
                             continue
                     elif ch.tagName == 'path':
+                        removeTransform = True
                         newCoords = ''
                         oldCoords = ch.getAttribute('d').strip()
                         if oldCoords == '':
                             continue
                         
+                        # Use a regex to find all commands and coordinates
+                        # This is more robust than splitting by space
+                        # Commands are M, L, H, V, C, S, Q, T, A, Z (and lowercase)
+                        # But pyqtgraph mostly uses M and L
                         for c in oldCoords.split(' '):
                             if not c: continue
                             if ',' not in c:
@@ -145,6 +151,8 @@ def apply_pyqtgraph_patches():
                             
                             ch.setAttribute('d', newCoords)
                     elif ch.tagName == 'text':
+                        # Do not remove transform for text
+                        removeTransform = False
                         families = ch.getAttribute('font-family').split(',')
                         if len(families) == 1:
                             font = QtGui.QFont(families[0].strip('" '))
@@ -156,9 +164,12 @@ def apply_pyqtgraph_patches():
                                 families.append('monospace')
                             ch.setAttribute('font-family', ', '.join(families))
 
+                # --- THE FIX ---
+                # Remove the transform attribute if it has been baked into the coordinates
+                if removeTransform:
+                    grp.removeAttribute('transform')
+
         # Replace the original function in the target module
         target_mod.correctCoordinates = patched_correctCoordinates
-        # print(f"Applied pyqtgraph SVGExporter monkeypatch to {target_mod.__name__}")
-    except Exception as e:
-        # print(f"Failed to apply pyqtgraph patches: {e}")
+    except Exception:
         pass
