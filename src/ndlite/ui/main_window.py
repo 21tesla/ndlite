@@ -510,6 +510,14 @@ class NMRViewerApp(QMainWindow):
         x_axis = self.plot_2d.getAxis('bottom')
         y_axis = self.plot_2d.getAxis('left')
 
+        axis_pen = pg.mkPen('k', width=0.5)
+        x_axis.setPen(axis_pen)
+        y_axis.setPen(axis_pen)
+        
+        # Ensure ticks also use the same pen
+        x_axis.setTextPen(pg.mkPen('k', width=0.5))
+        y_axis.setTextPen(pg.mkPen('k', width=0.5))
+
         x_axis.enableAutoSIPrefix(False)
         y_axis.enableAutoSIPrefix(False)
 
@@ -527,7 +535,7 @@ class NMRViewerApp(QMainWindow):
         self.hline = pg.InfiniteLine(angle=0, movable=False, pen=pg.mkPen('g', width=2))
         self.vline = pg.InfiniteLine(angle=90, movable=False, pen=pg.mkPen('g', width=2))
         # --- NEW: Visual indicator for the 1D Auto-Pick noise floor ---
-        self.threshold_line = pg.InfiniteLine(angle=0, movable=False, pen=pg.mkPen('r', style=Qt.PenStyle.DashLine, width=1))
+        self.threshold_line = pg.InfiniteLine(angle=0, movable=False, pen=pg.mkPen('r', style=Qt.PenStyle.DashLine, width=0.5))
         
         self.trace_curve = pg.PlotDataItem(pen=pg.mkPen(color='#DAA520', width=2))
         
