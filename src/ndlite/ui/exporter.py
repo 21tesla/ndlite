@@ -82,12 +82,11 @@ class Exporter:
                     from PyQt6.QtPrintSupport import QPrinter
                     from PyQt6.QtGui import QPainter
                     
-                    printer = QPrinter(QPrinter.PrinterMode.HighResolution)
+                    # Using ScreenResolution (standard 72-96 dpi for PDFs) is often more reliable
+                    # for capturing the exact layout of axes and labels than HighResolution.
+                    printer = QPrinter(QPrinter.PrinterMode.ScreenResolution)
                     printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
                     printer.setOutputFileName(file_path)
-                    
-                    # Set orientation based on plot aspect ratio
-                    # (optional but helpful)
                     
                     painter = QPainter(printer)
                     try:
@@ -95,16 +94,24 @@ class Exporter:
                         plot_item.setExportMode(True, {'painter': painter})
                         
                         scene = plot_item.scene()
+                        
+                        # Get page dimensions
                         page_rect = printer.pageLayout().paintRectPixels(printer.resolution())
+                        
+                        # Capture the whole PlotItem including axes
                         source_rect = plot_item.sceneBoundingRect()
                         
+                        # Calculate scaling to fit page while maintaining aspect ratio
                         scale = min(page_rect.width() / source_rect.width(), 
                                     page_rect.height() / source_rect.height())
+                        
+                        # Apply small margin
                         scale *= 0.95
                         
                         new_w = source_rect.width() * scale
                         new_h = source_rect.height() * scale
                         
+                        # Center on page
                         target_rect = QtCore.QRectF(
                             page_rect.left() + (page_rect.width() - new_w) / 2,
                             page_rect.top() + (page_rect.height() - new_h) / 2,
