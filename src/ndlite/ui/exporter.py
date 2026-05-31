@@ -89,10 +89,27 @@ class Exporter:
                     try:
                         # plot_item is a PlotItem, we need to render the scene
                         scene = plot_item.scene()
-                        # Get the source rect (the part of the scene we want to render)
-                        source_rect = plot_item.viewRect()
+                        
                         # Use the whole page as target
-                        target_rect = printer.pageLayout().paintRectPixels(printer.resolution())
+                        page_rect = printer.pageLayout().paintRectPixels(printer.resolution())
+                        
+                        # Get the source rect (the part of the scene we want to render)
+                        # We use the whole scene bounding rect to capture axes and labels
+                        source_rect = scene.itemsBoundingRect()
+                        
+                        # Calculate scaling to fit page while maintaining aspect ratio
+                        scale = min(page_rect.width() / source_rect.width(), 
+                                    page_rect.height() / source_rect.height())
+                        
+                        new_w = source_rect.width() * scale
+                        new_h = source_rect.height() * scale
+                        
+                        # Center on page
+                        target_rect = QtCore.QRectF(
+                            page_rect.left() + (page_rect.width() - new_w) / 2,
+                            page_rect.top() + (page_rect.height() - new_h) / 2,
+                            new_w, new_h
+                        )
                         
                         scene.render(painter, target_rect, source_rect)
                     finally:
