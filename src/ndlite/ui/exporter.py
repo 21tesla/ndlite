@@ -1,4 +1,5 @@
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
+from PyQt6 import QtCore
 import pyqtgraph.exporters as exporters
 
 class Exporter:
