@@ -66,15 +66,22 @@ class Exporter:
         )
 
         if file_path:
+            # Temporarily switch to export linewidth
+            orig_lw = self.main_window.prefs.get('linewidth', 0.5)
+            export_lw = self.main_window.prefs.get('export_linewidth', 0.25)
+            self.main_window.prefs['linewidth'] = export_lw
+            self.main_window.recompute_contours()
+
             try:
                 plot_item = self.main_window.plot_2d.getPlotItem()
                 if "SVG" in selected_filter:
                     exporter = exporters.SVGExporter(plot_item)
+                    exporter.export(file_path)
                 elif "PDF" in selected_filter:
                     from PyQt6.QtPrintSupport import QPrinter
                     from PyQt6.QtGui import QPainter
                     
-                    printer = QPrinter(QPrinter.Series.HighResolution)
+                    printer = QPrinter(QPrinter.PrinterMode.HighResolution)
                     printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
                     printer.setOutputFileName(file_path)
                     
@@ -90,13 +97,16 @@ class Exporter:
                         scene.render(painter, target_rect, source_rect)
                     finally:
                         painter.end()
-                    return # Already handled the export
                 else:
                     exporter = exporters.ImageExporter(plot_item)
-                
-                exporter.export(file_path)
+                    exporter.export(file_path)
+                    
             except Exception as e:
                 QMessageBox.critical(self.main_window, "Export Error", f"Failed to export: {str(e)}")
+            finally:
+                # Restore original linewidth
+                self.main_window.prefs['linewidth'] = orig_lw
+                self.main_window.recompute_contours()
 
         # Always restore state
         self._restore_export_state()
