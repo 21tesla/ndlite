@@ -91,34 +91,20 @@ class Exporter:
                     
                     painter = QPainter(printer)
                     try:
-                        # plot_item is a PlotItem
+                        # Use PlotItem's exporter-specific preparation
+                        plot_item.setExportMode(True, {'painter': painter})
+                        
                         scene = plot_item.scene()
-                        
-                        # We need to capture the whole PlotItem including its axes
-                        # PlotItem's geometry is usually its ViewBox, but we want the outer group
-                        target_item = plot_item
-                        
-                        # Use the whole page as target
                         page_rect = printer.pageLayout().paintRectPixels(printer.resolution())
+                        source_rect = plot_item.sceneBoundingRect()
                         
-                        # Bounding rect of the plot item in scene coordinates
-                        # This includes the axes and labels
-                        source_rect = target_item.sceneBoundingRect()
-                        
-                        # If itemsBoundingRect is better (it usually is for the whole plot)
-                        # but let's try mapping the item's own rect
-                        
-                        # Calculate scaling to fit page while maintaining aspect ratio
                         scale = min(page_rect.width() / source_rect.width(), 
                                     page_rect.height() / source_rect.height())
-                        
-                        # Add a small margin (5%)
                         scale *= 0.95
                         
                         new_w = source_rect.width() * scale
                         new_h = source_rect.height() * scale
                         
-                        # Center on page
                         target_rect = QtCore.QRectF(
                             page_rect.left() + (page_rect.width() - new_w) / 2,
                             page_rect.top() + (page_rect.height() - new_h) / 2,
@@ -127,6 +113,7 @@ class Exporter:
                         
                         scene.render(painter, target_rect, source_rect)
                     finally:
+                        plot_item.setExportMode(False)
                         painter.end()
                 else:
                     exporter = exporters.ImageExporter(plot_item)
