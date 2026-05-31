@@ -7,7 +7,7 @@ import certifi
 
 GLOBAL_SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
 
-VERSION = "0.5.2"
+VERSION = "0.6.0"
 
 class Updater:
     def __init__(self, main_window):

@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: ndlite
-Version: 0.5.0
+Version: 0.6.0
 Summary: A Python-based NMR spectrum visualization tool
 Author: Logan Donaldson
 License-Expression: MIT
