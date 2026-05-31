@@ -156,6 +156,7 @@ class IOController:
             "baseline_1d": {"min": 0.1, "max": 100.0, "default": 5.0, "step": 0.1},
             "phase_p0": {"min": -180.0, "max": 180.0, "step": 0.1},
             "phase_p1": {"min": -360.0, "max": 360.0, "step": 0.1},
+            "linewidth": 0.5,
             "controls": {
                 "base": {"label": "Baseline Multiplier", "min": 0.05, "max": 50.0, "default": 4.0, "is_int": False},
                 "scale": {"label": "Contour Multiplier", "min": 1.05, "max": 2.5, "default": 1.3, "is_int": False},
@@ -421,7 +422,7 @@ exec "{source_path}" "${{ABS_ARGS[@]}}"
 
                 if current_ndim == 1:
                     c_pos, _ = self.mw.spectrum_colors[c_idx]
-                    curve = pg.PlotDataItem(pen=pg.mkPen(c_pos, width=1))
+                    curve = pg.PlotDataItem(pen=pg.mkPen(c_pos, width=self.mw.prefs.get('linewidth', 0.5)))
                     self.mw.plot_2d.addItem(curve)
                     self.mw.file_curves_1d.append(curve)
                     self.mw.file_groups.append(None)
@@ -608,7 +609,7 @@ exec "{source_path}" "${{ABS_ARGS[@]}}"
             for idx in range(len(file_names)):
                 if is_1d:
                     c_pos, _ = self.mw.spectrum_colors[idx]
-                    curve = pg.PlotDataItem(pen=pg.mkPen(c_pos, width=1))
+                    curve = pg.PlotDataItem(pen=pg.mkPen(c_pos, width=self.mw.prefs.get('linewidth', 0.5)))
                     self.mw.plot_2d.addItem(curve)
                     self.mw.file_curves_1d.append(curve)
                     self.mw.file_groups.append(None)
