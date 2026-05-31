@@ -60,7 +60,7 @@ class Exporter:
             pass
                 
         # Use a standard QFileDialog instead of the finicky pyqtgraph export dialog
-        file_filter = "PNG Image (*.png);;SVG Vector Graphics (*.svg);;PDF Document (*.pdf);;CSV Data (*.csv);;All Files (*)"
+        file_filter = "PNG Image (*.png);;SVG Vector Graphics (*.svg);;PDF Document (*.pdf);;All Files (*)"
         file_path, selected_filter = QFileDialog.getSaveFileName(
             self.main_window, "Export Spectrum", "", file_filter
         )
@@ -71,9 +71,26 @@ class Exporter:
                 if "SVG" in selected_filter:
                     exporter = exporters.SVGExporter(plot_item)
                 elif "PDF" in selected_filter:
-                    exporter = exporters.PrintExporter(plot_item)
-                elif "CSV" in selected_filter:
-                    exporter = exporters.CSVExporter(plot_item)
+                    from PyQt6.QtPrintSupport import QPrinter
+                    from PyQt6.QtGui import QPainter
+                    
+                    printer = QPrinter(QPrinter.Series.HighResolution)
+                    printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
+                    printer.setOutputFileName(file_path)
+                    
+                    painter = QPainter(printer)
+                    try:
+                        # plot_item is a PlotItem, we need to render the scene
+                        scene = plot_item.scene()
+                        # Get the source rect (the part of the scene we want to render)
+                        source_rect = plot_item.viewRect()
+                        # Use the whole page as target
+                        target_rect = printer.pageLayout().paintRectPixels(printer.resolution())
+                        
+                        scene.render(painter, target_rect, source_rect)
+                    finally:
+                        painter.end()
+                    return # Already handled the export
                 else:
                     exporter = exporters.ImageExporter(plot_item)
                 

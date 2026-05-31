@@ -156,7 +156,7 @@ class IOController:
             "baseline_1d": {"min": 0.1, "max": 100.0, "default": 5.0, "step": 0.1},
             "phase_p0": {"min": -180.0, "max": 180.0, "step": 0.1},
             "phase_p1": {"min": -360.0, "max": 360.0, "step": 0.1},
-            "linewidth": 0.5,
+            "linewidth": 0.25,
             "controls": {
                 "base": {"label": "Baseline Multiplier", "min": 0.05, "max": 50.0, "default": 4.0, "is_int": False},
                 "scale": {"label": "Contour Multiplier", "min": 1.05, "max": 2.5, "default": 1.3, "is_int": False},

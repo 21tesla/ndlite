@@ -1086,7 +1086,7 @@ class NMRViewerApp(QMainWindow):
                 c_pos, _ = self.spectrum_colors[orig_i % len(self.spectrum_colors)]
                 
                 curve.setData(x=self.ppm_x, y=y_data)
-                curve.setPen(pg.mkPen(c_pos, width=self.prefs.get('linewidth', 0.5)))
+                curve.setPen(pg.mkPen(c_pos, width=self.prefs.get('linewidth', 0.25)))
                 curve.setVisible(True)
 
             # --- NEW: Update and display the 1D Auto-Pick threshold line ---
@@ -1157,7 +1157,7 @@ class NMRViewerApp(QMainWindow):
 
             # 5. Draw
             pool_idx = 0
-            lw = self.prefs.get('linewidth', 0.5)
+            lw = self.prefs.get('linewidth', 0.25)
             for level, pos_flag in zip(all_levels, is_pos):
                 pen = pg.mkPen(c_pos if pos_flag else c_neg, width=lw)
                 
