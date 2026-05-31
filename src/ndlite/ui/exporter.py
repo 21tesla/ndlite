@@ -60,7 +60,7 @@ class Exporter:
             pass
                 
         # Use a standard QFileDialog instead of the finicky pyqtgraph export dialog
-        file_filter = "PNG Image (*.png);;SVG Vector Graphics (*.svg);;CSV Data (*.csv);;All Files (*)"
+        file_filter = "PNG Image (*.png);;SVG Vector Graphics (*.svg);;PDF Document (*.pdf);;CSV Data (*.csv);;All Files (*)"
         file_path, selected_filter = QFileDialog.getSaveFileName(
             self.main_window, "Export Spectrum", "", file_filter
         )
@@ -70,6 +70,8 @@ class Exporter:
                 plot_item = self.main_window.plot_2d.getPlotItem()
                 if "SVG" in selected_filter:
                     exporter = exporters.SVGExporter(plot_item)
+                elif "PDF" in selected_filter:
+                    exporter = exporters.PrintExporter(plot_item)
                 elif "CSV" in selected_filter:
                     exporter = exporters.CSVExporter(plot_item)
                 else:

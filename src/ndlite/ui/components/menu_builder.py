@@ -80,11 +80,11 @@ class MenuBuilder:
         
         export_menu = file_menu.addMenu("Export")
         
-        export_spectrum_action = QAction("Spectrum", self.mw)
+        export_spectrum_action = QAction("Spectrum (Image/Vector)...", self.mw)
         export_spectrum_action.triggered.connect(self.mw.exporter.export_spectrum)
         export_menu.addAction(export_spectrum_action)
         
-        export_peaks_action = QAction("Peaks + Spectrum", self.mw)
+        export_peaks_action = QAction("Peaks + Spectrum (Image/Vector)...", self.mw)
         export_peaks_action.triggered.connect(self.mw.exporter.export_peaks_spectrum)
         export_menu.addAction(export_peaks_action)
 
