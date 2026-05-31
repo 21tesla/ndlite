@@ -86,21 +86,34 @@ class Exporter:
                     printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
                     printer.setOutputFileName(file_path)
                     
+                    # Set orientation based on plot aspect ratio
+                    # (optional but helpful)
+                    
                     painter = QPainter(printer)
                     try:
-                        # plot_item is a PlotItem, we need to render the scene
+                        # plot_item is a PlotItem
                         scene = plot_item.scene()
+                        
+                        # We need to capture the whole PlotItem including its axes
+                        # PlotItem's geometry is usually its ViewBox, but we want the outer group
+                        target_item = plot_item
                         
                         # Use the whole page as target
                         page_rect = printer.pageLayout().paintRectPixels(printer.resolution())
                         
-                        # Get the source rect (the part of the scene we want to render)
-                        # We use the whole scene bounding rect to capture axes and labels
-                        source_rect = scene.itemsBoundingRect()
+                        # Bounding rect of the plot item in scene coordinates
+                        # This includes the axes and labels
+                        source_rect = target_item.sceneBoundingRect()
+                        
+                        # If itemsBoundingRect is better (it usually is for the whole plot)
+                        # but let's try mapping the item's own rect
                         
                         # Calculate scaling to fit page while maintaining aspect ratio
                         scale = min(page_rect.width() / source_rect.width(), 
                                     page_rect.height() / source_rect.height())
+                        
+                        # Add a small margin (5%)
+                        scale *= 0.95
                         
                         new_w = source_rect.width() * scale
                         new_h = source_rect.height() * scale
