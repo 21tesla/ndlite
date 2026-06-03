@@ -7,14 +7,15 @@ class PeakManager:
 
 #---------------------------------------------------------------------------------------
 
-    def add_force_peak(self, ppm_x, ppm_y, ppm_z=None, closest_z_idx=None):
+    def add_force_peak(self, ppm_x, ppm_y, ppm_z=None, closest_z_idx=None, label=None):
         self.peak_counter += 1
         self.picked_peaks.append({
             'id': self.peak_counter, 
             'ppm_x': ppm_x, 
             'ppm_y': ppm_y,
             'ppm_z': ppm_z,
-            'closest_z': closest_z_idx
+            'closest_z': closest_z_idx,
+            'label': label
         })
         return self.picked_peaks
 
@@ -23,6 +24,9 @@ class PeakManager:
     def renumber_peaks(self):
         for i, p in enumerate(self.picked_peaks):
             p['id'] = i + 1
+            # If label was previously just the old #ID, we might want to update it?
+            # User didn't specify, but usually manual labels should be kept.
+            # Default labels are generated at display time if p['label'] is None.
         self.peak_counter = len(self.picked_peaks)
         return self.picked_peaks
 
@@ -35,7 +39,7 @@ class PeakManager:
 
 #---------------------------------------------------------------------------------------
                 
-    def refine_peak(self, click_ppm_x, click_ppm_y, data, ppm_x, ppm_y, threshold=0.0, click_z_idx=None, ppm_z=None):
+    def refine_peak(self, click_ppm_x, click_ppm_y, data, ppm_x, ppm_y, threshold=0.0, click_z_idx=None, ppm_z=None, label=None):
         if data is None or data.size == 0:
             return self.picked_peaks
             
@@ -76,7 +80,8 @@ class PeakManager:
                 'ppm_x': refined_ppm_x, 
                 'ppm_y': refined_ppm_y,
                 'ppm_z': None,
-                'closest_z': None
+                'closest_z': None,
+                'label': label
             })
             
         elif data.ndim == 2:
@@ -129,7 +134,8 @@ class PeakManager:
                 'ppm_x': refined_ppm_x, 
                 'ppm_y': refined_ppm_y,
                 'ppm_z': None,
-                'closest_z': None
+                'closest_z': None,
+                'label': label
             })
 
         elif data.ndim == 3:
@@ -196,7 +202,8 @@ class PeakManager:
                 'ppm_x': refined_ppm_x, 
                 'ppm_y': refined_ppm_y,
                 'ppm_z': refined_ppm_z,
-                'closest_z': closest_z_idx
+                'closest_z': closest_z_idx,
+                'label': label
             })
 
         return self.picked_peaks
@@ -205,7 +212,7 @@ class PeakManager:
        
     def delete_nearest_peak(self, click_x, click_y, dx_scale, dy_scale):
         if not self.picked_peaks:
-            return self.picked_peaks
+            return None, self.picked_peaks
             
         best_idx, min_dist = -1, float('inf')
         
@@ -217,9 +224,29 @@ class PeakManager:
                 min_dist, best_idx = dist, i
                 
         if min_dist < 0.01 and best_idx != -1:
+            peak = self.picked_peaks[best_idx]
             del self.picked_peaks[best_idx]
+            return peak, self.picked_peaks
             
-        return self.picked_peaks
+        return None, self.picked_peaks
+
+    def get_nearest_peak(self, click_x, click_y, dx_scale, dy_scale):
+        if not self.picked_peaks:
+            return None
+            
+        best_idx, min_dist = -1, float('inf')
+        
+        for i, p in enumerate(self.picked_peaks):
+            dx = (p['ppm_x'] - click_x) / dx_scale
+            dy = (p['ppm_y'] - click_y) / dy_scale
+            dist = dx**2 + dy**2
+            if dist < min_dist:
+                min_dist, best_idx = dist, i
+                
+        if min_dist < 0.01 and best_idx != -1:
+            return self.picked_peaks[best_idx]
+            
+        return None
 
 #---------------------------------------------------------------------------------------
 
@@ -251,7 +278,8 @@ class PeakManager:
                     'ppm_y': data[idx], 
                     'ppm_z': None,
                     'closest_z': None,
-                    'intensity': data[idx]
+                    'intensity': data[idx],
+                    'label': None
                 })
                 
         elif data.ndim == 2:
@@ -300,7 +328,8 @@ class PeakManager:
                     'ppm_y': refined_ppm_y,
                     'ppm_z': None,
                     'closest_z': None,
-                    'intensity': data[x_idx, y_idx] # NEW: Save the true peak height
+                    'intensity': data[x_idx, y_idx], # NEW: Save the true peak height
+                    'label': None
                 })
 
         elif data.ndim == 3:
@@ -365,7 +394,8 @@ class PeakManager:
                     'ppm_y': refined_ppm_y,
                     'ppm_z': refined_ppm_z,
                     'closest_z': closest_z_idx,
-                    'intensity': data[z_idx, y_idx, x_idx] # NEW: Save the true peak height
+                    'intensity': data[z_idx, y_idx, x_idx], # NEW: Save the true peak height
+                    'label': None
                 })
 
         return self.picked_peaks

@@ -786,7 +786,7 @@ class NMRViewerApp(QMainWindow):
             self.trace_curve.setVisible(False)
             self.plot_2d.setTitle(" ")
             
-        elif event.button() == Qt.MouseButton.LeftButton:
+        elif event.button() in [Qt.MouseButton.LeftButton, Qt.MouseButton.MiddleButton]:
             if self.current_mode in ['peak_pick', 'peak_delete', 'baseline_interactive']:
                 
                 view_box = self.plot_2d.getViewBox()
@@ -797,6 +797,8 @@ class NMRViewerApp(QMainWindow):
                 if self.current_mode == 'peak_pick':
                     if event.modifiers() & Qt.KeyboardModifier.ShiftModifier:
                         self.peak_controller.force_pick(click_ppm_x, click_ppm_y)
+                    elif (event.modifiers() & Qt.KeyboardModifier.AltModifier) or (event.button() == Qt.MouseButton.MiddleButton):
+                        self.peak_controller.rename_peak_dialog(click_ppm_x, click_ppm_y)
                     else:
                         active_idx = self.active_index
                         current_z_idx = self.slider_z.value() - 1 if hasattr(self, 'nz') and self.nz > 1 else None

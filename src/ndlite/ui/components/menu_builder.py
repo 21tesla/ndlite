@@ -18,6 +18,10 @@ class MenuBuilder:
         save_peaks_action.setShortcut("s")
         save_peaks_action.triggered.connect(self.mw.peak_controller.save_peaks)
 
+        load_peaks_action = QAction("Load Peaks...", self.mw)
+        load_peaks_action.setShortcut("l")
+        load_peaks_action.triggered.connect(self.mw.peak_controller.load_peaks)
+
         auto_pick_action = QAction("Auto Pick", self.mw)
         auto_pick_action.triggered.connect(self.mw.peak_controller.auto_pick)
 
@@ -77,6 +81,7 @@ class MenuBuilder:
         file_menu.addSeparator()
         
         file_menu.addAction(save_peaks_action)
+        file_menu.addAction(load_peaks_action)
         
         export_menu = file_menu.addMenu("Export")
         
@@ -163,6 +168,7 @@ class MenuBuilder:
         self.mw.one_d_menu.addSeparator()
 
         self.mw.one_d_menu.addAction(save_peaks_action)
+        self.mw.one_d_menu.addAction(load_peaks_action)
 
 
         # --- 2D/3D-Peaks Menu ---
@@ -180,6 +186,7 @@ class MenuBuilder:
         self.mw.two_d_menu.addAction(clear_peaks_action)
         self.mw.two_d_menu.addAction(renumber_peaks_action)
         self.mw.two_d_menu.addAction(save_peaks_action)
+        self.mw.two_d_menu.addAction(load_peaks_action)
                 
  
         # --- Extras Menu ---
