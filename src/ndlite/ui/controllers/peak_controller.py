@@ -483,10 +483,7 @@ class PeakController:
         if vis_data is None:
             return
 
-        if raw_data.ndim == 1:
-            base_mult = self.mw.spinbox_1d_base.value()
-        else:
-            base_mult = self.mw.cont_sliders['base'].value()
+        base_mult = self.mw.baseline_multipliers[active_idx]
             
         noise_rmsd = self.mw.data_handler.calculate_rmsd(vis_data)
         threshold = noise_rmsd * base_mult * 1.5

@@ -179,6 +179,9 @@ class NMRViewerApp(QMainWindow):
         self.peak_enabled_flags = []
         self.enabled_indices = []
         self.active_index = 0
+        self.baseline_multipliers = []
+        self.contour_multipliers = []
+        self.contour_counts = []
         self.peak_managers = []
         self.peak_scatter_items = [] # List of ScatterPlotItems
         self.peak_text_items = [] # List of dicts: {pid -> TextItem}
@@ -330,7 +333,10 @@ class NMRViewerApp(QMainWindow):
         def b1d_sl_changed(val):
             self.spinbox_1d_base.blockSignals(True)
             try:
-                self.spinbox_1d_base.setValue(round(val / 100.0, 2))
+                new_val = round(val / 100.0, 2)
+                self.spinbox_1d_base.setValue(new_val)
+                if 0 <= self.active_index < len(self.baseline_multipliers):
+                    self.baseline_multipliers[self.active_index] = new_val
             finally:
                 self.spinbox_1d_base.blockSignals(False)
 
@@ -338,6 +344,8 @@ class NMRViewerApp(QMainWindow):
             self.slider_1d_base.blockSignals(True)
             try:
                 self.slider_1d_base.setValue(int(round(val * 100)))
+                if 0 <= self.active_index < len(self.baseline_multipliers):
+                    self.baseline_multipliers[self.active_index] = val
             finally:
                 self.slider_1d_base.blockSignals(False)
             self.recompute_contours()
@@ -446,11 +454,19 @@ class NMRViewerApp(QMainWindow):
                     def sl_changed(val):
                         spinbox.blockSignals(True)
                         spinbox.setValue(val)
+                        if k == 'base' and 0 <= self.active_index < len(self.baseline_multipliers):
+                            self.baseline_multipliers[self.active_index] = val
+                        elif k == 'count' and 0 <= self.active_index < len(self.contour_counts):
+                            self.contour_counts[self.active_index] = val
                         spinbox.blockSignals(False)
 
                     def sb_changed(val):
                         slider.blockSignals(True)
                         slider.setValue(val)
+                        if k == 'base' and 0 <= self.active_index < len(self.baseline_multipliers):
+                            self.baseline_multipliers[self.active_index] = val
+                        elif k == 'count' and 0 <= self.active_index < len(self.contour_counts):
+                            self.contour_counts[self.active_index] = val
                         slider.blockSignals(False)
                         self.recompute_contours()
 
@@ -476,7 +492,12 @@ class NMRViewerApp(QMainWindow):
                         spinbox.blockSignals(True)
                         try:
                             # Safely round back to the exact double value
-                            spinbox.setValue(round(val / 100.0, 2))
+                            new_val = round(val / 100.0, 2)
+                            spinbox.setValue(new_val)
+                            if k == 'base' and 0 <= self.active_index < len(self.baseline_multipliers):
+                                self.baseline_multipliers[self.active_index] = new_val
+                            elif k == 'scale' and 0 <= self.active_index < len(self.contour_multipliers):
+                                self.contour_multipliers[self.active_index] = new_val
                         finally:
                             spinbox.blockSignals(False)
 
@@ -485,6 +506,10 @@ class NMRViewerApp(QMainWindow):
                         try:
                             # Safely round to int to prevent truncation desync at bounds
                             slider.setValue(int(round(val * 100)))
+                            if k == 'base' and 0 <= self.active_index < len(self.baseline_multipliers):
+                                self.baseline_multipliers[self.active_index] = val
+                            elif k == 'scale' and 0 <= self.active_index < len(self.contour_multipliers):
+                                self.contour_multipliers[self.active_index] = val
                         finally:
                             slider.blockSignals(False)
                         self.recompute_contours()
@@ -806,7 +831,7 @@ class NMRViewerApp(QMainWindow):
                             vis_data = self.vis_data_dict.get(active_idx)
                             raw_data = self.raw_data_list[active_idx]
 
-                            base_mult = self.cont_sliders['base'].value()
+                            base_mult = self.baseline_multipliers[active_idx]
                             noise_rmsd = self.data_handler.calculate_rmsd(vis_data)
                             threshold = noise_rmsd * base_mult
 
@@ -1057,10 +1082,16 @@ class NMRViewerApp(QMainWindow):
 
         if not self.enabled_indices:
             self.trace_curve.setData([], [])
-            for i in range(len(self.raw_data_list)):
-                if self.raw_data.ndim == 1 and self.file_curves_1d[i]: 
+            num_data = len(self.raw_data_list)
+            num_curves = len(self.file_curves_1d)
+            num_groups = len(self.file_groups)
+            
+            for i in range(num_data):
+                # Fix: Check self.raw_data and fallback to specific spectrum ndim
+                ndim = self.raw_data.ndim if self.raw_data is not None else self.raw_data_list[i].ndim
+                if ndim == 1 and i < num_curves and self.file_curves_1d[i]: 
                     self.file_curves_1d[i].setVisible(False)
-                elif self.file_groups[i]: 
+                elif i < num_groups and self.file_groups[i]: 
                     self.file_groups[i].setVisible(False)
             return
 
@@ -1068,7 +1099,9 @@ class NMRViewerApp(QMainWindow):
         y_p0, y_p1 = self.get_phase_vals('y')
         z_p0, z_p1 = self.get_phase_vals('z') if hasattr(self, 'nz') and self.nz > 1 else (0, 0)
         
-        if self.raw_data.ndim == 1:
+        # Fix: Check self.raw_data and fallback to active spectrum ndim
+        current_ndim = self.raw_data.ndim if self.raw_data is not None else self.raw_data_list[self.active_index].ndim
+        if current_ndim == 1:
             offset_val = self.cont_sliders['offset'].value()
             base_max = np.max(np.abs(self.current_slice_list[0])) if self.current_slice_list else 1.0
             
@@ -1104,8 +1137,8 @@ class NMRViewerApp(QMainWindow):
                 primary_i = self.enabled_indices[0]
                 vis_data = self.vis_data_dict[primary_i]
                 
-                # CORRECTION: Read from the new 1D spinbox, not the 2D contour slider
-                base_mult = self.spinbox_1d_base.value() 
+                # USE spectrum-specific multiplier for the primary spectrum
+                base_mult = self.baseline_multipliers[primary_i]
                 noise_rmsd = self.data_handler.calculate_rmsd(vis_data)
                 
                 # Matches the 1.5x strictness modifier used in auto_pick
@@ -1122,9 +1155,9 @@ class NMRViewerApp(QMainWindow):
         if hasattr(self, 'threshold_line'):
             self.threshold_line.setVisible(False)            
             
-        base_mult = self.cont_sliders['base'].value()
-        scale_fact = self.cont_sliders['scale'].value()
-        count = int(self.cont_sliders['count'].value())
+        # Global fallbacks if needed, but we'll use per-spectrum values in the loop
+        scale_fact_default = self.cont_sliders['scale'].value()
+        count_default = int(self.cont_sliders['count'].value())
 
         for orig_i in range(len(self.raw_data_list)):
             group, pool = self.file_groups[orig_i], self.file_pools_2d[orig_i]
@@ -1162,6 +1195,11 @@ class NMRViewerApp(QMainWindow):
             group.setTransform(tr)
             
             # 4. Fetch Contour Levels
+            # USE spectrum-specific values
+            base_mult = self.baseline_multipliers[orig_i]
+            scale_fact = self.contour_multipliers[orig_i] if orig_i < len(self.contour_multipliers) else scale_fact_default
+            count = int(self.contour_counts[orig_i]) if orig_i < len(self.contour_counts) else count_default
+            
             all_levels, is_pos = self.data_handler.get_contour_levels(vis_data, base_mult, scale_fact, count)
             c_pos, c_neg = self.spectrum_colors[orig_i % len(self.spectrum_colors)]
 

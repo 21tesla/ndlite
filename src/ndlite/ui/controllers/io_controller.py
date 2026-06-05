@@ -278,6 +278,51 @@ exec "{source_path}" "${{ABS_ARGS[@]}}"
             # Potentially update plot title or other UI elements to reflect active spectrum
             self.mw.plot_2d.setTitle(f"Active: {os.path.basename(self.mw.file_paths_list[index])}")
 
+            # Update baseline multiplier UI
+            mult = self.mw.baseline_multipliers[index]
+            if self.mw.raw_data_list[index].ndim == 1:
+                self.mw.spinbox_1d_base.blockSignals(True)
+                self.mw.slider_1d_base.blockSignals(True)
+                self.mw.spinbox_1d_base.setValue(mult)
+                self.mw.slider_1d_base.setValue(int(mult * 100))
+                self.mw.spinbox_1d_base.blockSignals(False)
+                self.mw.slider_1d_base.blockSignals(False)
+            else:
+                # Use cont_widgets and cont_sliders for 2D/3D
+                if 'base' in self.mw.cont_widgets:
+                    _, slider, spinbox = self.mw.cont_widgets['base']
+                    spinbox.blockSignals(True)
+                    slider.blockSignals(True)
+                    spinbox.setValue(mult)
+                    slider.setValue(int(round(mult * 100)))
+                    spinbox.blockSignals(False)
+                    slider.blockSignals(False)
+
+                # Sync Scale (Contour Multiplier)
+                if 'scale' in self.mw.cont_widgets:
+                    scale_mult = self.mw.contour_multipliers[index]
+                    _, slider, spinbox = self.mw.cont_widgets['scale']
+                    spinbox.blockSignals(True)
+                    slider.blockSignals(True)
+                    spinbox.setValue(scale_mult)
+                    slider.setValue(int(round(scale_mult * 100)))
+                    spinbox.blockSignals(False)
+                    slider.blockSignals(False)
+
+                # Sync Count (Number of Contours)
+                if 'count' in self.mw.cont_widgets:
+                    count_val = self.mw.contour_counts[index]
+                    _, slider, spinbox = self.mw.cont_widgets['count']
+                    spinbox.blockSignals(True)
+                    slider.blockSignals(True)
+                    spinbox.setValue(int(count_val))
+                    slider.setValue(int(count_val))
+                    spinbox.blockSignals(False)
+                    slider.blockSignals(False)
+            
+            # Recompute to update the 1D threshold line if applicable
+            self.mw.recompute_contours()
+
     def on_peak_toggled(self, index, enabled):
         if 0 <= index < len(self.mw.peak_enabled_flags):
             self.mw.peak_enabled_flags[index] = enabled
@@ -313,10 +358,12 @@ exec "{source_path}" "${{ABS_ARGS[@]}}"
         self.mw.file_enabled_flags.pop(index)
         self.mw.peak_enabled_flags.pop(index)
         self.mw.baseline_corrections.pop(index)
-        self.mw.file_groups.pop(index)
+        self.mw.baseline_multipliers.pop(index)
+        self.mw.contour_multipliers.pop(index)
+        self.mw.contour_counts.pop(index)
+        self.mw.peak_managers.pop(index)
         self.mw.file_pools_2d.pop(index)
         self.mw.file_curves_1d.pop(index)
-        self.mw.peak_managers.pop(index)
         self.mw.peak_scatter_items.pop(index)
         self.mw.peak_text_items.pop(index)
         
@@ -399,6 +446,15 @@ exec "{source_path}" "${{ABS_ARGS[@]}}"
                 self.mw.file_enabled_flags.append(True)
                 self.mw.peak_enabled_flags.append(True)
                 self.mw.baseline_corrections.append(None)
+                
+                if data.ndim == 1:
+                    self.mw.baseline_multipliers.append(self.mw.prefs["baseline_1d"]["default"])
+                else:
+                    self.mw.baseline_multipliers.append(self.mw.prefs["controls"]["base"]["default"])
+                
+                self.mw.contour_multipliers.append(self.mw.prefs["controls"]["scale"]["default"])
+                self.mw.contour_counts.append(self.mw.prefs["controls"]["count"]["default"])
+
                 self.mw.peak_managers.append(PeakManager())
                 self.mw.peak_scatter_items.append(None) # Will be created by update_peak_markers
                 self.mw.peak_text_items.append({})
@@ -472,6 +528,9 @@ exec "{source_path}" "${{ABS_ARGS[@]}}"
         self.mw.file_enabled_flags = [True] * len(file_names)
         self.mw.peak_enabled_flags = [True] * len(file_names)
         self.mw.baseline_corrections = [None] * len(file_names) 
+        self.mw.baseline_multipliers = [None] * len(file_names)
+        self.mw.contour_multipliers = [None] * len(file_names)
+        self.mw.contour_counts = [None] * len(file_names)
         self.mw.peak_managers = [PeakManager() for _ in range(len(file_names))]
         self.mw.peak_scatter_items = []
         self.mw.peak_text_items = []
@@ -496,6 +555,14 @@ exec "{source_path}" "${{ABS_ARGS[@]}}"
                 
                 c_pos, c_neg = default_colors[i % len(default_colors)]
                 self.mw.spectrum_colors.append([c_pos, c_neg])
+
+                if data.ndim == 1:
+                    self.mw.baseline_multipliers[i] = self.mw.prefs["baseline_1d"]["default"]
+                else:
+                    self.mw.baseline_multipliers[i] = self.mw.prefs["controls"]["base"]["default"]
+                
+                self.mw.contour_multipliers[i] = self.mw.prefs["controls"]["scale"]["default"]
+                self.mw.contour_counts[i] = self.mw.prefs["controls"]["count"]["default"]
 
                 model = SpectrumModel(file_name, dic, data, c_pos, c_neg)
 
