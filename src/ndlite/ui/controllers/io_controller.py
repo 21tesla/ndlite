@@ -272,10 +272,78 @@ exec "{source_path}" "${{ABS_ARGS[@]}}"
         if file_names:
             self.add_files(file_names)
 
+    def compute_scales_for_index(self, idx):
+        dic = self.mw.dic_list[idx]
+        data = self.mw.raw_data_list[idx]
+        ndim = data.ndim
+        
+        if ndim == 1:
+            uc_x = ng.pipe.make_uc(dic, data, dim=0)
+            ppm_x, lim_x = uc_x.ppm_scale(), uc_x.ppm_limits()
+            ppm_y, lim_y = None, None
+            ppm_z, lim_z = None, None
+        elif ndim == 3:
+            uc_z = ng.pipe.make_uc(dic, data, dim=0)
+            uc_y = ng.pipe.make_uc(dic, data, dim=1)
+            uc_x = ng.pipe.make_uc(dic, data, dim=2)
+            ppm_z, lim_z = uc_z.ppm_scale(), uc_z.ppm_limits()
+            ppm_y, lim_y = uc_y.ppm_scale(), uc_y.ppm_limits()
+            ppm_x, lim_x = uc_x.ppm_scale(), uc_x.ppm_limits()
+        else: # ndim == 2
+            uc_plot_y = ng.pipe.make_uc(dic, data, dim=0)
+            uc_plot_x = ng.pipe.make_uc(dic, data, dim=1)
+            ppm_z, lim_z = None, None
+            ppm_y, lim_y = uc_plot_y.ppm_scale(), uc_plot_y.ppm_limits()
+            ppm_x, lim_x = uc_plot_x.ppm_scale(), uc_plot_x.ppm_limits()
+            
+        return ppm_x, lim_x, ppm_y, lim_y, ppm_z, lim_z
+
     def on_selection_changed(self, index):
         if 0 <= index < len(self.mw.raw_data_list):
             self.mw.active_index = index
-            # Potentially update plot title or other UI elements to reflect active spectrum
+            self.mw.dic = self.mw.dic_list[index]
+            self.mw.raw_data = self.mw.raw_data_list[index]
+            
+            # Update current active coordinates and limits to the active spectrum
+            self.mw.ppm_x = self.mw.ppm_x_list[index]
+            self.mw.lim_x = self.mw.lim_x_list[index]
+            self.mw.ppm_y = self.mw.ppm_y_list[index]
+            self.mw.lim_y = self.mw.lim_y_list[index]
+            self.mw.ppm_z = self.mw.ppm_z_list[index]
+            self.mw.lim_z = self.mw.lim_z_list[index]
+            
+            # Synchronize slice and phasing references
+            self.mw._update_enabled_state()
+            
+            # Update plot labels dynamically to match the active spectrum's names
+            dic = self.mw.dic
+            ndim = self.mw.raw_data.ndim
+            order = dic.get('FDDIMORDER', [2, 1, 3, 4])
+            
+            if ndim == 1:
+                orig_dim_x = int(order[0]) if len(order) > 0 else 2
+                self.mw.label_x = dic.get(f'FDF{orig_dim_x}LABEL', '1H')
+                self.mw.label_y = "Intensity"
+                self.mw.label_z = None
+                self.mw.plot_2d.setLabel('bottom', self.mw.label_x, units="ppm")
+                self.mw.plot_2d.setLabel('left', self.mw.label_y, units="")
+            elif ndim == 3:
+                orig_dim_x = int(order[0]) if len(order) > 0 else 2
+                orig_dim_y = int(order[1]) if len(order) > 1 else 3
+                orig_dim_z = int(order[2]) if len(order) > 2 else 1
+                self.mw.label_x = dic.get(f'FDF{orig_dim_x}LABEL', 'X')
+                self.mw.label_y = dic.get(f'FDF{orig_dim_y}LABEL', 'Y')
+                self.mw.label_z = dic.get(f'FDF{orig_dim_z}LABEL', 'Z')
+                self.mw.plot_2d.setLabel('bottom', self.mw.label_x, units="ppm")
+                self.mw.plot_2d.setLabel('left', self.mw.label_y, units="ppm")
+            else:
+                orig_dim_x = int(order[0]) if len(order) > 0 else 2
+                orig_dim_y = int(order[1]) if len(order) > 1 else 1
+                self.mw.label_x = dic.get(f'FDF{orig_dim_x}LABEL', 'X')
+                self.mw.label_y = dic.get(f'FDF{orig_dim_y}LABEL', 'Y')
+                self.mw.plot_2d.setLabel('bottom', self.mw.label_x, units="ppm")
+                self.mw.plot_2d.setLabel('left', self.mw.label_y, units="ppm")
+
             self.mw.plot_2d.setTitle(f"Active: {os.path.basename(self.mw.file_paths_list[index])}")
 
             # Update baseline multiplier UI
@@ -366,6 +434,12 @@ exec "{source_path}" "${{ABS_ARGS[@]}}"
         self.mw.file_curves_1d.pop(index)
         self.mw.peak_scatter_items.pop(index)
         self.mw.peak_text_items.pop(index)
+        self.mw.ppm_x_list.pop(index)
+        self.mw.ppm_y_list.pop(index)
+        self.mw.ppm_z_list.pop(index)
+        self.mw.lim_x_list.pop(index)
+        self.mw.lim_y_list.pop(index)
+        self.mw.lim_z_list.pop(index)
         
         # 3. Update active pointers
         if not self.mw.raw_data_list:
@@ -380,8 +454,15 @@ exec "{source_path}" "${{ABS_ARGS[@]}}"
             self.mw.plot_2d.setTitle("Please load a file.")
         else:
             self.mw.active_index = min(self.mw.active_index, len(self.mw.raw_data_list) - 1)
-            self.mw.dic = self.mw.dic_list[0]
-            self.mw.raw_data = self.mw.raw_data_list[0]
+            active_idx = self.mw.active_index
+            self.mw.dic = self.mw.dic_list[active_idx]
+            self.mw.raw_data = self.mw.raw_data_list[active_idx]
+            self.mw.ppm_x = self.mw.ppm_x_list[active_idx]
+            self.mw.lim_x = self.mw.lim_x_list[active_idx]
+            self.mw.ppm_y = self.mw.ppm_y_list[active_idx]
+            self.mw.lim_y = self.mw.lim_y_list[active_idx]
+            self.mw.ppm_z = self.mw.ppm_z_list[active_idx]
+            self.mw.lim_z = self.mw.lim_z_list[active_idx]
             
         # 4. Refresh the UI list (to fix closure indices)
         self.refresh_data_list()
@@ -442,6 +523,16 @@ exec "{source_path}" "${{ABS_ARGS[@]}}"
 
                 self.mw.dic_list.append(dic)
                 self.mw.raw_data_list.append(data)
+                
+                # Compute and append scales
+                ppm_x, lim_x, ppm_y, lim_y, ppm_z, lim_z = self.compute_scales_for_index(len(self.mw.raw_data_list) - 1)
+                self.mw.ppm_x_list.append(ppm_x)
+                self.mw.lim_x_list.append(lim_x)
+                self.mw.ppm_y_list.append(ppm_y)
+                self.mw.lim_y_list.append(lim_y)
+                self.mw.ppm_z_list.append(ppm_z)
+                self.mw.lim_z_list.append(lim_z)
+                
                 self.mw.file_paths_list.append(file_name)
                 self.mw.file_enabled_flags.append(True)
                 self.mw.peak_enabled_flags.append(True)
@@ -524,6 +615,12 @@ exec "{source_path}" "${{ABS_ARGS[@]}}"
         self.mw.dic_list = []
         self.mw.raw_data_list = []
         self.mw.file_paths_list = []
+        self.mw.ppm_x_list = []
+        self.mw.ppm_y_list = []
+        self.mw.ppm_z_list = []
+        self.mw.lim_x_list = []
+        self.mw.lim_y_list = []
+        self.mw.lim_z_list = []
         self.mw.spectrum_colors = []
         self.mw.file_enabled_flags = [True] * len(file_names)
         self.mw.peak_enabled_flags = [True] * len(file_names)
@@ -551,6 +648,16 @@ exec "{source_path}" "${{ABS_ARGS[@]}}"
                 dic, data = self.mw.data_handler.load_file(file_name)
                 self.mw.dic_list.append(dic)
                 self.mw.raw_data_list.append(data)
+                
+                # Compute and append scales
+                ppm_x, lim_x, ppm_y, lim_y, ppm_z, lim_z = self.compute_scales_for_index(len(self.mw.raw_data_list) - 1)
+                self.mw.ppm_x_list.append(ppm_x)
+                self.mw.lim_x_list.append(lim_x)
+                self.mw.ppm_y_list.append(ppm_y)
+                self.mw.lim_y_list.append(lim_y)
+                self.mw.ppm_z_list.append(ppm_z)
+                self.mw.lim_z_list.append(lim_z)
+                
                 self.mw.file_paths_list.append(file_name)
                 
                 c_pos, c_neg = default_colors[i % len(default_colors)]
@@ -613,8 +720,7 @@ exec "{source_path}" "${{ABS_ARGS[@]}}"
                 self.mw.label_y = "Intensity"
                 self.mw.label_z = None
 
-                uc_x = ng.pipe.make_uc(self.mw.dic, self.mw.raw_data, dim=0)
-                self.mw.ppm_x, self.mw.lim_x = uc_x.ppm_scale(), uc_x.ppm_limits()
+                self.mw.ppm_x, self.mw.lim_x = self.mw.ppm_x_list[0], self.mw.lim_x_list[0]
                 self.mw.ppm_y, self.mw.lim_y = None, None
                 
                 self.mw.x_dim, self.mw.y_dim, self.mw.z_dim = 0, None, None
@@ -636,13 +742,9 @@ exec "{source_path}" "${{ABS_ARGS[@]}}"
                 self.mw.label_y = self.mw.dic.get(f'FDF{orig_dim_y}LABEL', 'Y')
                 self.mw.label_z = self.mw.dic.get(f'FDF{orig_dim_z}LABEL', 'Z')
 
-                uc_z = ng.pipe.make_uc(self.mw.dic, self.mw.raw_data, dim=self.mw.z_dim)
-                uc_y = ng.pipe.make_uc(self.mw.dic, self.mw.raw_data, dim=self.mw.y_dim)
-                uc_x = ng.pipe.make_uc(self.mw.dic, self.mw.raw_data, dim=self.mw.x_dim)
-
-                self.mw.ppm_z, self.mw.lim_z = uc_z.ppm_scale(), uc_z.ppm_limits()
-                self.mw.ppm_y, self.mw.lim_y = uc_y.ppm_scale(), uc_y.ppm_limits()
-                self.mw.ppm_x, self.mw.lim_x = uc_x.ppm_scale(), uc_x.ppm_limits()
+                self.mw.ppm_z, self.mw.lim_z = self.mw.ppm_z_list[0], self.mw.lim_z_list[0]
+                self.mw.ppm_y, self.mw.lim_y = self.mw.ppm_y_list[0], self.mw.lim_y_list[0]
+                self.mw.ppm_x, self.mw.lim_x = self.mw.ppm_x_list[0], self.mw.lim_x_list[0]
                 self.mw.nz = self.mw.raw_data.shape[self.mw.z_dim]
 
                 self.mw.plot_2d.setLabel('bottom', self.mw.label_x, units="ppm")
@@ -658,14 +760,11 @@ exec "{source_path}" "${{ABS_ARGS[@]}}"
                 self.mw.label_x = self.mw.dic.get(f'FDF{orig_dim_x}LABEL', 'X')
                 self.mw.label_y = self.mw.dic.get(f'FDF{orig_dim_y}LABEL', 'Y')
 
-                uc_plot_y = ng.pipe.make_uc(self.mw.dic, self.mw.raw_data, dim=self.mw.y_dim)
-                uc_plot_x = ng.pipe.make_uc(self.mw.dic, self.mw.raw_data, dim=self.mw.x_dim)
-
                 self.mw.z_dim = None
                 self.mw.label_z = None
                 self.mw.nz = 1
-                self.mw.ppm_x, self.mw.lim_x = uc_plot_x.ppm_scale(), uc_plot_x.ppm_limits()
-                self.mw.ppm_y, self.mw.lim_y = uc_plot_y.ppm_scale(), uc_plot_y.ppm_limits()
+                self.mw.ppm_x, self.mw.lim_x = self.mw.ppm_x_list[0], self.mw.lim_x_list[0]
+                self.mw.ppm_y, self.mw.lim_y = self.mw.ppm_y_list[0], self.mw.lim_y_list[0]
 
                 self.mw.plot_2d.setLabel('bottom', self.mw.label_x, units="ppm")
                 self.mw.plot_2d.setLabel('left', self.mw.label_y, units="ppm")

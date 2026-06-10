@@ -193,6 +193,12 @@ class NMRViewerApp(QMainWindow):
         self.slice_x_idx = 1
         self.ppm_x, self.ppm_y, self.ppm_z = None, None, None
         self.lim_x, self.lim_y, self.lim_z = None, None, None
+        self.ppm_x_list = []
+        self.ppm_y_list = []
+        self.ppm_z_list = []
+        self.lim_x_list = []
+        self.lim_y_list = []
+        self.lim_z_list = []
         self.label_x, self.label_y, self.label_z = "X", "Y", "Z"
 
         self.h_pos = 0.0
@@ -697,6 +703,13 @@ class NMRViewerApp(QMainWindow):
         self.ppm_x, self.ppm_y = self.ppm_y, self.ppm_x
         self.lim_x, self.lim_y = self.lim_y, self.lim_x
         
+        # Swap PPM scales and limits for all loaded spectra
+        for i in range(len(self.raw_data_list)):
+            if i < len(self.ppm_x_list) and i < len(self.ppm_y_list):
+                self.ppm_x_list[i], self.ppm_y_list[i] = self.ppm_y_list[i], self.ppm_x_list[i]
+            if i < len(self.lim_x_list) and i < len(self.lim_y_list):
+                self.lim_x_list[i], self.lim_y_list[i] = self.lim_y_list[i], self.lim_x_list[i]
+        
         # Swap labels
         self.label_x, self.label_y = self.label_y, self.label_x
         
@@ -1076,6 +1089,15 @@ class NMRViewerApp(QMainWindow):
         if not self.raw_data_list:
             return
 
+        # Ensure plot items are fully initialized for all spectra before trying to render
+        current_ndim = self.raw_data.ndim if self.raw_data is not None else self.raw_data_list[self.active_index].ndim
+        if current_ndim == 1:
+            if len(self.file_curves_1d) < len(self.raw_data_list):
+                return
+        else:
+            if len(self.file_groups) < len(self.raw_data_list):
+                return
+
         self.plot_2d.getViewBox().disableAutoRange()
         if not hasattr(self, 'vis_data_dict'):
             self.vis_data_dict = {}
@@ -1128,7 +1150,8 @@ class NMRViewerApp(QMainWindow):
                 y_data = plot_data + (idx * offset_val * (base_max * 0.1))
                 c_pos, _ = self.spectrum_colors[orig_i % len(self.spectrum_colors)]
                 
-                curve.setData(x=self.ppm_x, y=y_data)
+                ppm_x_i = self.ppm_x_list[orig_i] if hasattr(self, 'ppm_x_list') and orig_i < len(self.ppm_x_list) else self.ppm_x
+                curve.setData(x=ppm_x_i, y=y_data)
                 curve.setPen(pg.mkPen(c_pos, width=self.prefs.get('linewidth', 0.5)))
                 curve.setVisible(True)
 
@@ -1186,11 +1209,13 @@ class NMRViewerApp(QMainWindow):
             
             # 3. Calculate View Transforms
             nx, ny = vis_data.shape
-            scale_x = (self.ppm_x[-1] - self.ppm_x[0] if len(self.ppm_x) > 1 else 1.0) / max(1, nx - 1)
-            scale_y = (self.ppm_y[-1] - self.ppm_y[0] if len(self.ppm_y) > 1 else 1.0) / max(1, ny - 1)
+            ppm_x_i = self.ppm_x_list[orig_i] if hasattr(self, 'ppm_x_list') and orig_i < len(self.ppm_x_list) else self.ppm_x
+            ppm_y_i = self.ppm_y_list[orig_i] if hasattr(self, 'ppm_y_list') and orig_i < len(self.ppm_y_list) else self.ppm_y
+            scale_x = (ppm_x_i[-1] - ppm_x_i[0] if len(ppm_x_i) > 1 else 1.0) / max(1, nx - 1)
+            scale_y = (ppm_y_i[-1] - ppm_y_i[0] if len(ppm_y_i) > 1 else 1.0) / max(1, ny - 1)
             
             tr = QTransform()
-            tr.translate(self.ppm_x[0] - 0.5 * scale_x, self.ppm_y[0] - 0.5 * scale_y)
+            tr.translate(ppm_x_i[0] - 0.5 * scale_x, ppm_y_i[0] - 0.5 * scale_y)
             tr.scale(scale_x, scale_y)
             group.setTransform(tr)
             
