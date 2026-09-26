@@ -453,6 +453,10 @@ exec "{source_path}" "${{ABS_ARGS[@]}}"
                 self.mw.menu_builder.add_spectrum_action.setEnabled(False)
             self.mw.plot_2d.setTitle("Please load a file.")
         else:
+            # If the removed spectrum was above the active one, the active spectrum
+            # shifts down by one index when the lists are popped.
+            if index < self.mw.active_index:
+                self.mw.active_index -= 1
             self.mw.active_index = min(self.mw.active_index, len(self.mw.raw_data_list) - 1)
             active_idx = self.mw.active_index
             self.mw.dic = self.mw.dic_list[active_idx]

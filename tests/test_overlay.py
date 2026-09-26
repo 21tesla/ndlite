@@ -35,20 +35,28 @@ class TestSpectrumOverlay(unittest.TestCase):
         self.assertEqual(viewer.active_index, 0)
         self.assertTrue(np.allclose(viewer.ppm_x, viewer.ppm_x_list[0]))
         self.assertTrue(np.allclose(viewer.ppm_y, viewer.ppm_y_list[0]))
-        
+
         # Simulate selecting spectrum 1 as active
         viewer.io_controller.on_selection_changed(1)
         self.assertEqual(viewer.active_index, 1)
         # Verify main window active axes are successfully updated to spectrum 1
         self.assertTrue(np.allclose(viewer.ppm_x, viewer.ppm_x_list[1]))
         self.assertTrue(np.allclose(viewer.ppm_y, viewer.ppm_y_list[1]))
-        
+
+        # Capture the active spectrum's axes before flipping
+        x_before = viewer.ppm_x.copy()
+        y_before = viewer.ppm_y.copy()
+
         # Simulate flipping axes
         viewer.flip_axes()
-        # Verify main window active coordinates are flipped
-        self.assertTrue(np.allclose(viewer.ppm_x, viewer.ppm_x_list[1]))
-        self.assertTrue(np.allclose(viewer.ppm_y, viewer.ppm_y_list[1]))
-        
+
+        # Verify the flip actually swapped the axes on the active spectrum
+        self.assertTrue(np.allclose(viewer.ppm_x, y_before))
+        self.assertTrue(np.allclose(viewer.ppm_y, x_before))
+        # The per-spectrum lists must be swapped too
+        self.assertTrue(np.allclose(viewer.ppm_x_list[1], y_before))
+        self.assertTrue(np.allclose(viewer.ppm_y_list[1], x_before))
+
         # Clean up
         viewer.close()
 

@@ -279,11 +279,7 @@ class PeakController:
                     
                     peak_manager.picked_peaks.append(peak_dict)
             else:
-                # Basic text format loader (very simple tab-delimited)
-                import pandas as pd
-                df = pd.read_csv(file_path, sep='\t')
-                # Try to map columns... (omitted for brevity, let's focus on .tab)
-                pass
+                raise ValueError("Unsupported peak file format: only NMRdraw .tab files are supported.")
 
             self.mw.peak_enabled_flags[active_idx] = True
             self.update_peak_markers()
