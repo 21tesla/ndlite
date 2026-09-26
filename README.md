@@ -1,7 +1,7 @@
 
 # ndlite
 
-![Python 3.12](https://img.shields.io/badge/Python-3.12-blue?logo=python&logoColor=white)
+![Python >=3.10](https://img.shields.io/badge/Python-%3E%3D3.10-blue?logo=python&logoColor=white)
 ![PyQt6](https://img.shields.io/badge/GUI-PyQt6-41CD52?logo=qt&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![macOS](https://img.shields.io/badge/macOS-Standalone_App-white?logo=apple&logoColor=black)
